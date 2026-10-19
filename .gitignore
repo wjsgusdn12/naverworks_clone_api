@@ -19,6 +19,7 @@ application-local.properties
 # Local agent workspace files
 AGENTS.md
 docs/PROGRESS.md
+docs/PROJECT_CONTEXT.md
 
 # IDE and editor settings
 .idea/

@@ -1,0 +1,34 @@
+# Build outputs
+build/
+target/
+out/
+*.class
+
+# Logs
+*.log
+logs/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# IDE and editor settings
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test and profiling outputs
+coverage/
+*.hprof
+

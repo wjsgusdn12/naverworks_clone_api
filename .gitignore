@@ -16,6 +16,10 @@ application-local.yml
 application-local.yaml
 application-local.properties
 
+# Local agent workspace files
+AGENTS.md
+docs/PROGRESS.md
+
 # IDE and editor settings
 .idea/
 *.iml
@@ -31,4 +35,3 @@ Thumbs.db
 # Test and profiling outputs
 coverage/
 *.hprof
-

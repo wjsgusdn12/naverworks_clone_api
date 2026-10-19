@@ -2,6 +2,7 @@
 build/
 target/
 out/
+bin/
 *.class
 
 # Logs
@@ -20,6 +21,7 @@ application-local.properties
 AGENTS.md
 docs/PROGRESS.md
 docs/PROJECT_CONTEXT.md
+HELP.md
 
 # IDE and editor settings
 .idea/
@@ -28,6 +30,8 @@ docs/PROJECT_CONTEXT.md
 .project
 .classpath
 .settings/
+.factorypath
+.sts4-cache/
 
 # OS files
 .DS_Store

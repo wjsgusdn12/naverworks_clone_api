@@ -44,7 +44,8 @@ public class AuthService {
                 .filter(account -> passwordEncoder.matches(request.password(), account.getPasswordHash()))
                 .orElseThrow(InvalidAuthenticationException::new);
 
-        Membership membership = membershipRepository.findFirstByUserAccountIdOrderByIdAsc(userAccount.getId())
+        // DB 유니크 제약으로 보장되는 단일 회사 소속을 인증 주체로 사용.
+        Membership membership = membershipRepository.findByUserAccountId(userAccount.getId())
                 .orElseThrow(InvalidAuthenticationException::new);
 
         return issueTokens(membership);

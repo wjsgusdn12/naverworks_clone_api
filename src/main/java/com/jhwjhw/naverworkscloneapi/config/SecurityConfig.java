@@ -1,6 +1,8 @@
 package com.jhwjhw.naverworkscloneapi.config;
 
 import com.jhwjhw.naverworkscloneapi.auth.AppAuthProperties;
+import com.jhwjhw.naverworkscloneapi.common.security.RestAccessDeniedHandler;
+import com.jhwjhw.naverworkscloneapi.common.security.RestAuthenticationEntryPoint;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
@@ -38,7 +40,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            RestAuthenticationEntryPoint restAuthenticationEntryPoint,
+            RestAccessDeniedHandler restAccessDeniedHandler
+    ) throws Exception {
         return http
                 // JWT를 Authorization 헤더로 전달하므로 서버 세션을 만들지 않음.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -50,7 +57,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+                // Filter 단계의 401·403도 Controller 예외 응답과 같은 JSON 형식으로 반환.
+                .exceptionHandling(exceptionHandling -> exceptionHandling
+                        .authenticationEntryPoint(restAuthenticationEntryPoint)
+                        .accessDeniedHandler(restAccessDeniedHandler))
+                // 만료·위조된 Bearer JWT 오류도 Resource Server 기본 응답 대신 공통 JSON으로 반환.
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(restAuthenticationEntryPoint)
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 .build();
     }
 

@@ -12,9 +12,9 @@
 - **홈 화면 UI 구현됨** (정확한 소스 파일 경로 확인 필요).
 - 임시로 **프론트에서 `admin / 1234` 입력을 관리자처럼 취급하고 홈으로 이동**하게 만듦.
 - 네이버/카카오/구글 **소셜 로그인 버튼 UI만** 만들어짐.
-- Spring Boot가 Supabase PostgreSQL에 연결되고 Flyway V1 스키마가 적용됨.
+- Spring Boot가 Supabase PostgreSQL에 연결되고 Flyway V1·V2 스키마가 적용됨.
 - 실제 로그인 API와 프론트 연동은 아직 진행 전이며, 프론트 목업 인증을 유지 중.
-- JWT 액세스·리프레시 토큰 인증 API와 최소 Spring Security 인가를 구현함. OAuth2 로그인은 미구현.
+- JWT 액세스·리프레시 토큰 인증 API와 최소 Spring Security 인가를 구현함. 성공·실패 JSON은 `ApiResponse<T>` 형식으로 통일했으며 OAuth2 로그인은 미구현.
 - 나머지 조직/채팅/Redis/예약/통계/모니터링/AI 기능은 **구현됐다고 확인할 수 없음**.
 
 ## 2. 기술 선택 대기
@@ -66,7 +66,7 @@ Next.js 로그인 UI
 | 네이버/카카오/구글 버튼 | UI만 | OAuth2 X |
 | 로그인 API | 구현 | JWT 액세스·리프레시 토큰 발급/갱신/로그아웃/내 정보 API |
 | 프론트 로그인 연동 | 미구현 | 기존 목업 인증 유지 |
-| RDBMS 연결 | 완료 | Supabase PostgreSQL + Flyway V1 확인 |
+| RDBMS 연결 | 완료 | Supabase PostgreSQL + Flyway V1·V2 적용 확인 |
 | Security USER/ADMIN 실제 인가 | 최소 구현 | JWT role 클레임을 `ROLE_*` 권한으로 변환 |
 | Messenger ~ AI/배포 | 계획 | 구현 여부 소스 조사 전 |
 

@@ -12,6 +12,7 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.Role;
 import com.jhwjhw.naverworkscloneapi.identity.domain.UserAccount;
 import com.jhwjhw.naverworkscloneapi.identity.repository.CompanyRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.JobGradeRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.UserAccountRepository;
 import jakarta.servlet.http.Cookie;
@@ -57,6 +58,9 @@ class AuthControllerTests {
     private MembershipRepository membershipRepository;
 
     @Autowired
+    private JobGradeRepository jobGradeRepository;
+
+    @Autowired
     private RefreshTokenRepository refreshTokenRepository;
 
     @Autowired
@@ -74,6 +78,7 @@ class AuthControllerTests {
         // 테스트끼리 데이터가 섞이지 않도록 FK 순서의 역순으로 초기화.
         refreshTokenRepository.deleteAll();
         membershipRepository.deleteAll();
+        jobGradeRepository.deleteAll();
         departmentRepository.deleteAll();
         userAccountRepository.deleteAll();
         companyRepository.deleteAll();

@@ -47,4 +47,9 @@ public class UserAccount {
         this.createdAt = Instant.now();
     }
 
+    public void updateProfile(String displayName, boolean enabled) {
+        this.displayName = displayName;
+        this.enabled = enabled;
+    }
+
 }

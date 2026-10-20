@@ -1,6 +1,7 @@
 package com.jhwjhw.naverworkscloneapi.common.exception;
 
 import com.jhwjhw.naverworkscloneapi.auth.InvalidAuthenticationException;
+import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookException;
 import com.jhwjhw.naverworkscloneapi.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AddressBookException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAddressBookException(AddressBookException exception, HttpServletRequest request) {
+        log.warn("Address book request rejected. code={}, method={}, path={}", exception.getCode(), request.getMethod(), request.getRequestURI());
+        return ResponseEntity.badRequest().body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+    }
 
     @ExceptionHandler(InvalidAuthenticationException.class)
     public ResponseEntity<ApiResponse<Void>> handleInvalidAuthentication(HttpServletRequest request) {

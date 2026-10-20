@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.LocalDate;
 import lombok.Getter;
 
 @Entity
@@ -36,6 +37,22 @@ public class Membership {
     @JoinColumn(name = "department_id")
     private Department department;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "job_grade_id")
+    private JobGrade jobGrade;
+
+    @Column(name = "job_title", length = 100)
+    private String jobTitle;
+
+    @Column(name = "phone_number", length = 30)
+    private String phoneNumber;
+
+    @Column(name = "hired_at")
+    private LocalDate hiredAt;
+
+    @Column(name = "away_until")
+    private Instant awayUntil;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private Role role;
@@ -53,6 +70,27 @@ public class Membership {
         this.department = department;
         this.role = role;
         this.createdAt = Instant.now();
+    }
+
+    public void updateProfile(
+            Department department,
+            JobGrade jobGrade,
+            String jobTitle,
+            String phoneNumber,
+            LocalDate hiredAt,
+            Role role
+    ) {
+        this.department = department;
+        this.jobGrade = jobGrade;
+        this.jobTitle = jobTitle;
+        this.phoneNumber = phoneNumber;
+        this.hiredAt = hiredAt;
+        this.role = role;
+    }
+
+    // 부재중은 최대 일주일까지만 허용하며 만료 시 Service에서 해제.
+    public void setAwayUntil(Instant awayUntil) {
+        this.awayUntil = awayUntil;
     }
 
 }

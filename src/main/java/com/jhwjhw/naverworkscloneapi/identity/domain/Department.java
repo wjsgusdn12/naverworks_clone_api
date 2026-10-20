@@ -30,10 +30,29 @@ public class Department {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(nullable = false)
+    private boolean enabled;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected Department() {
         // JPA 전용 기본 생성자.
+    }
+
+    public Department(Company company, String name) {
+        this.company = company;
+        this.name = name;
+        this.enabled = true;
+        this.createdAt = Instant.now();
+    }
+
+    // 활성 구성원이 없는 부서만 비활성화하도록 Service에서 검증.
+    public void deactivate() {
+        this.enabled = false;
+    }
+
+    public void rename(String name) {
+        this.name = name;
     }
 }

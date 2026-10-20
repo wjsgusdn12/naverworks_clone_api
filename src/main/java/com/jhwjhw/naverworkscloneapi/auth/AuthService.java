@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 // final 의존성 생성자는 Lombok이 자동 생성.
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     public static final String REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
@@ -48,6 +50,8 @@ public class AuthService {
         Membership membership = membershipRepository.findByUserAccountId(userAccount.getId())
                 .orElseThrow(InvalidAuthenticationException::new);
 
+        // 비밀번호·토큰·이메일은 남기지 않고 인증 주체 식별자만 운영 로그에 기록.
+        log.info("Login succeeded. membershipId={}", membership.getId());
         return issueTokens(membership, request.rememberMe());
     }
 
@@ -56,6 +60,7 @@ public class AuthService {
         RefreshToken refreshToken = findUsableRefreshToken(rawRefreshToken);
         // 토큰을 한 번 쓰면 즉시 폐기하는 Rotation 방식으로 탈취 토큰 재사용을 줄임.
         refreshToken.revoke(Instant.now());
+        log.debug("Refresh token rotated. membershipId={}", refreshToken.getMembership().getId());
         return issueTokens(refreshToken.getMembership(), refreshToken.isPersistentLogin());
     }
 
@@ -72,8 +77,10 @@ public class AuthService {
             return;
         }
 
-        refreshTokenRepository.findByTokenHash(hashToken(rawRefreshToken))
-                .ifPresent(token -> token.revoke(Instant.now()));
+        refreshTokenRepository.findByTokenHash(hashToken(rawRefreshToken)).ifPresent(token -> {
+            token.revoke(Instant.now());
+            log.info("Logout succeeded. membershipId={}", token.getMembership().getId());
+        });
     }
 
     public ResponseCookie createRefreshCookie(String rawRefreshToken, boolean persistentLogin) {

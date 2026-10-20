@@ -67,6 +67,8 @@ class AuthControllerTests {
 
     private Membership testMembership;
 
+    private Membership testUserMembership;
+
     @BeforeEach
     void setUp() {
         // 테스트끼리 데이터가 섞이지 않도록 FK 순서의 역순으로 초기화.
@@ -84,6 +86,13 @@ class AuthControllerTests {
                 "테스트 관리자"
         ));
         testMembership = membershipRepository.save(new Membership(company, userAccount, null, Role.ADMIN));
+
+        UserAccount standardUser = userAccountRepository.save(new UserAccount(
+                "user@example.com",
+                passwordEncoder.encode("safe-user-password"),
+                "테스트 일반 사용자"
+        ));
+        testUserMembership = membershipRepository.save(new Membership(company, standardUser, null, Role.USER));
     }
 
     @Test
@@ -113,6 +122,28 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.code").value("AUTH_MEMBER_FOUND"))
                 .andExpect(jsonPath("$.data.email").value("admin@example.com"))
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
+    }
+
+    @Test
+    void loginReturnsUserRoleForStandardUser() throws Exception {
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@example.com\",\"password\":\"safe-user-password\",\"rememberMe\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.member.role").value("USER"))
+                .andReturn();
+
+        String accessToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+                .path("data")
+                .path("accessToken")
+                .asText();
+
+        // 일반 사용자 토큰도 자신의 구성원 정보만 정상 조회할 수 있어야 함.
+        mockMvc.perform(get("/api/v1/auth/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.membershipId").value(testUserMembership.getId()))
+                .andExpect(jsonPath("$.data.role").value("USER"));
     }
 
     @Test

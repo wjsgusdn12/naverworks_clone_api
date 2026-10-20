@@ -7,14 +7,22 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     hibernate:
+      # Entity와 Flyway로 만든 실제 테이블 구조가 다른 경우 서버 시작을 막음.
       ddl-auto: validate
+    # Controller 응답을 만드는 중에 지연 로딩 쿼리가 실행되는 것을 방지.
     open-in-view: false
   flyway:
     enabled: true
 
 app:
   cors:
+    # Next.js 개발 서버만 API와 쿠키를 교차 출처로 호출하도록 허용.
     allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
   auth:
     issuer: ${JWT_ISSUER:naverworks-clone-api}
     jwt-secret-base64: ${JWT_SECRET_BASE64}
+    # PT15M은 15분, P14D는 14일을 뜻하는 ISO-8601 시간 형식.
+    access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:PT15M}
+    refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:P14D}
+    # HTTPS 운영 환경에서는 true로 설정해 쿠키를 암호화 연결에서만 전송.
+    refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:false}

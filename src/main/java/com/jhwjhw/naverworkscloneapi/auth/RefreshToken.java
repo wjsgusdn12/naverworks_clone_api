@@ -12,9 +12,12 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Getter;
 
 @Entity
 @Table(name = "refresh_token")
+// @Data 대신 조회 전용 Getter만 생성해 JPA 연관관계의 위험한 Setter/toString 생성을 막음.
+@Getter
 public class RefreshToken {
 
     @Id
@@ -42,5 +45,24 @@ public class RefreshToken {
     private Instant createdAt;
 
     protected RefreshToken() {
+        // JPA가 DB 조회 결과로 객체를 만들 때 사용하는 기본 생성자.
+    }
+
+    public RefreshToken(UUID tokenId, Membership membership, String tokenHash, Instant expiresAt) {
+        this.tokenId = tokenId;
+        this.membership = membership;
+        this.tokenHash = tokenHash;
+        this.expiresAt = expiresAt;
+        this.createdAt = Instant.now();
+    }
+
+    public boolean isUsableAt(Instant now) {
+        // 폐기되었거나 만료된 토큰은 재발급에 사용할 수 없음.
+        return revokedAt == null && expiresAt.isAfter(now);
+    }
+
+    public void revoke(Instant revokedAt) {
+        // 삭제 대신 폐기 시각을 남겨 탈취 토큰 재사용을 차단.
+        this.revokedAt = revokedAt;
     }
 }

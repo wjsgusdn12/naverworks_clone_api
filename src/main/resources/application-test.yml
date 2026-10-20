@@ -1,5 +1,6 @@
 spring:
   datasource:
+    # 테스트마다 메모리에서 새로 만드는 H2 DB를 PostgreSQL 문법 호환 모드로 실행.
     url: jdbc:h2:mem:naverworks;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
     username: sa
     password:
@@ -11,5 +12,9 @@ app:
   cors:
     allowed-origin: http://localhost:3000
   auth:
+    # 테스트 전용 키이므로 운영 키와 분리. 실제 운영 시크릿은 절대 여기에 넣지 않음.
     issuer: naverworks-clone-api-test
     jwt-secret-base64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    access-token-expiration: PT15M
+    refresh-token-expiration: P14D
+    refresh-cookie-secure: false

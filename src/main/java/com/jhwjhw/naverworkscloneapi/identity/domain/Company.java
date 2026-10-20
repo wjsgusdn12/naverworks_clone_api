@@ -7,9 +7,12 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.Getter;
 
 @Entity
 @Table(name = "company")
+@Getter
+// 여러 사용자와 부서를 묶는 회사(테넌트) 단위.
 public class Company {
 
     @Id
@@ -23,9 +26,12 @@ public class Company {
     private Instant createdAt;
 
     protected Company() {
+        // JPA가 DB에서 조회한 값을 채울 때 사용.
     }
 
     public Company(String name) {
         this.name = name;
+        this.createdAt = Instant.now();
     }
+
 }

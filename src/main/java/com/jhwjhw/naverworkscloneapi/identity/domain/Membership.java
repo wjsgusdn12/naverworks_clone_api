@@ -12,9 +12,12 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import lombok.Getter;
 
 @Entity
 @Table(name = "membership")
+@Getter
+// 사용자와 회사의 소속 관계이며 회사별 역할과 부서 정보를 함께 보관.
 public class Membership {
 
     @Id
@@ -41,5 +44,15 @@ public class Membership {
     private Instant createdAt;
 
     protected Membership() {
+        // JPA 전용 기본 생성자.
     }
+
+    public Membership(Company company, UserAccount userAccount, Department department, Role role) {
+        this.company = company;
+        this.userAccount = userAccount;
+        this.department = department;
+        this.role = role;
+        this.createdAt = Instant.now();
+    }
+
 }

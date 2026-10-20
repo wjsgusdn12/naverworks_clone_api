@@ -1,0 +1,15 @@
+# Copy this file to application-local.yml. The target file is ignored by Git.
+# Enter real secrets only in application-local.yml, never in this example file.
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.gosyisfsladfldfvcaed
+    password: "REPLACE_WITH_YOUR_SUPABASE_DATABASE_PASSWORD"
+
+app:
+  auth:
+    # Generate 32 random bytes and Base64-encode them before setting this value.
+    jwt-secret-base64: "REPLACE_WITH_A_BASE64_ENCODED_32_BYTE_SECRET"

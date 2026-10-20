@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: naverworks-clone-api
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+app:
+  cors:
+    allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
+  auth:
+    issuer: ${JWT_ISSUER:naverworks-clone-api}
+    jwt-secret-base64: ${JWT_SECRET_BASE64}

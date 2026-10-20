@@ -35,6 +35,10 @@ public class RefreshToken {
     @Column(name = "token_hash", nullable = false, unique = true, length = 64)
     private String tokenHash;
 
+    // 로그인 유지 선택 여부를 보관해 토큰 재발급 뒤에도 쿠키 성격을 유지.
+    @Column(name = "persistent_login", nullable = false)
+    private boolean persistentLogin;
+
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
@@ -48,11 +52,18 @@ public class RefreshToken {
         // JPA가 DB 조회 결과로 객체를 만들 때 사용하는 기본 생성자.
     }
 
-    public RefreshToken(UUID tokenId, Membership membership, String tokenHash, Instant expiresAt) {
+    public RefreshToken(
+            UUID tokenId,
+            Membership membership,
+            String tokenHash,
+            Instant expiresAt,
+            boolean persistentLogin
+    ) {
         this.tokenId = tokenId;
         this.membership = membership;
         this.tokenHash = tokenHash;
         this.expiresAt = expiresAt;
+        this.persistentLogin = persistentLogin;
         this.createdAt = Instant.now();
     }
 

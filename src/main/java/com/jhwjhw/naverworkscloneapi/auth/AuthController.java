@@ -28,7 +28,7 @@ public class AuthController {
         // 액세스 토큰은 응답 본문, 리프레시 토큰은 JavaScript가 읽을 수 없는 쿠키로 반환.
         AuthService.AuthResult result = authService.login(request);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, authService.createRefreshCookie(result.refreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, authService.createRefreshCookie(result.refreshToken(), result.persistentLogin()).toString())
                 .body(ApiResponse.success("AUTH_LOGIN_SUCCESS", "로그인에 성공했습니다.", result.response()));
     }
 
@@ -39,7 +39,7 @@ public class AuthController {
         // 브라우저가 HttpOnly 쿠키를 자동 전송하면 새 토큰 쌍으로 교체.
         AuthService.AuthResult result = authService.refresh(refreshToken);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, authService.createRefreshCookie(result.refreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, authService.createRefreshCookie(result.refreshToken(), result.persistentLogin()).toString())
                 .body(ApiResponse.success("AUTH_TOKEN_REFRESHED", "인증 토큰을 갱신했습니다.", result.response()));
     }
 

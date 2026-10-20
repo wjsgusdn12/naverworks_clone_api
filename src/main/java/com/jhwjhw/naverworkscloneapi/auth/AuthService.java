@@ -48,7 +48,7 @@ public class AuthService {
         Membership membership = membershipRepository.findByUserAccountId(userAccount.getId())
                 .orElseThrow(InvalidAuthenticationException::new);
 
-        return issueTokens(membership);
+        return issueTokens(membership, request.rememberMe());
     }
 
     @Transactional
@@ -56,7 +56,7 @@ public class AuthService {
         RefreshToken refreshToken = findUsableRefreshToken(rawRefreshToken);
         // 토큰을 한 번 쓰면 즉시 폐기하는 Rotation 방식으로 탈취 토큰 재사용을 줄임.
         refreshToken.revoke(Instant.now());
-        return issueTokens(refreshToken.getMembership());
+        return issueTokens(refreshToken.getMembership(), refreshToken.isPersistentLogin());
     }
 
     @Transactional(readOnly = true)
@@ -76,15 +76,20 @@ public class AuthService {
                 .ifPresent(token -> token.revoke(Instant.now()));
     }
 
-    public ResponseCookie createRefreshCookie(String rawRefreshToken) {
+    public ResponseCookie createRefreshCookie(String rawRefreshToken, boolean persistentLogin) {
         // HttpOnly라 브라우저 JavaScript로 읽을 수 없어 XSS 노출 범위를 줄임.
-        return ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, rawRefreshToken)
+        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, rawRefreshToken)
                 .httpOnly(true)
                 .secure(appAuthProperties.refreshCookieSecure())
                 .sameSite("Strict")
-                .path("/api/v1/auth")
-                .maxAge(appAuthProperties.refreshTokenExpiration())
-                .build();
+                .path("/api/v1/auth");
+
+        if (persistentLogin) {
+            // 로그인 유지 선택 시에만 브라우저 재시작 후에도 남는 영속 쿠키를 발급.
+            cookieBuilder.maxAge(appAuthProperties.refreshTokenExpiration());
+        }
+
+        return cookieBuilder.build();
     }
 
     public ResponseCookie deleteRefreshCookie() {
@@ -97,7 +102,7 @@ public class AuthService {
                 .build();
     }
 
-    private AuthResult issueTokens(Membership membership) {
+    private AuthResult issueTokens(Membership membership, boolean persistentLogin) {
         Instant now = Instant.now();
         Instant accessTokenExpiresAt = now.plus(appAuthProperties.accessTokenExpiration());
         String accessToken = jwtEncoder.encode(JwtEncoderParameters.from(JwtClaimsSet.builder()
@@ -117,7 +122,8 @@ public class AuthService {
                 UUID.randomUUID(),
                 membership,
                 hashToken(rawRefreshToken),
-                now.plus(appAuthProperties.refreshTokenExpiration())
+                now.plus(appAuthProperties.refreshTokenExpiration()),
+                persistentLogin
         ));
 
         AuthResponse response = new AuthResponse(
@@ -126,7 +132,7 @@ public class AuthService {
                 appAuthProperties.accessTokenExpiration().toSeconds(),
                 toMemberResponse(membership)
         );
-        return new AuthResult(response, rawRefreshToken);
+        return new AuthResult(response, rawRefreshToken, persistentLogin);
     }
 
     private RefreshToken findUsableRefreshToken(String rawRefreshToken) {
@@ -173,6 +179,6 @@ public class AuthService {
     }
 
     // Controller에 응답 본문과 HttpOnly 쿠키 값을 함께 전달하는 서비스 내부 결과 객체.
-    public record AuthResult(AuthResponse response, String refreshToken) {
+    public record AuthResult(AuthResponse response, String refreshToken, boolean persistentLogin) {
     }
 }

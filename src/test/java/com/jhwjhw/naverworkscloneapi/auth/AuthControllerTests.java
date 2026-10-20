@@ -90,7 +90,7 @@ class AuthControllerTests {
     void loginIssuesAccessTokenAndRefreshCookieThenMeReadsMember() throws Exception {
         MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"admin@example.com\",\"password\":\"safe-test-password\"}"))
+                        .content("{\"email\":\"admin@example.com\",\"password\":\"safe-test-password\",\"rememberMe\":true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("AUTH_LOGIN_SUCCESS"))
@@ -104,7 +104,7 @@ class AuthControllerTests {
         String accessToken = responseBody.path("data").path("accessToken").asText();
 
         // 리프레시 토큰은 HttpOnly 쿠키, API 호출용 액세스 토큰은 응답 본문으로 분리.
-        assertThat(setCookie).contains("refreshToken=").contains("HttpOnly");
+        assertThat(setCookie).contains("refreshToken=").contains("HttpOnly").contains("Max-Age=");
         assertThat(accessToken).isNotBlank();
 
         mockMvc.perform(get("/api/v1/auth/me")
@@ -116,11 +116,24 @@ class AuthControllerTests {
     }
 
     @Test
+    void loginWithRememberMeFalseIssuesSessionCookie() throws Exception {
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        // 로그인 유지를 선택하지 않으면 브라우저 종료 시 사라지는 세션 쿠키를 발급.
+                        .content("{\"email\":\"admin@example.com\",\"password\":\"safe-test-password\",\"rememberMe\":false}"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String setCookie = loginResult.getResponse().getHeader("Set-Cookie");
+        assertThat(setCookie).contains("refreshToken=").doesNotContain("Max-Age=");
+    }
+
+    @Test
     void loginRejectsWrongPasswordWithoutLeakingAccountExistence() throws Exception {
         // 계정은 존재해도 비밀번호가 틀리면 동일한 401 응답만 제공.
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"admin@example.com\",\"password\":\"wrong-password\"}"))
+                        .content("{\"email\":\"admin@example.com\",\"password\":\"wrong-password\",\"rememberMe\":false}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_FAILED"));
@@ -138,7 +151,7 @@ class AuthControllerTests {
     void loginRejectsInvalidRequestWithCommonResponse() throws Exception {
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"not-an-email\",\"password\":\"\"}"))
+                        .content("{\"email\":\"not-an-email\",\"password\":\"\",\"rememberMe\":false}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
@@ -209,7 +222,7 @@ class AuthControllerTests {
     private String loginAndExtractRefreshToken() throws Exception {
         MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"admin@example.com\",\"password\":\"safe-test-password\"}"))
+                        .content("{\"email\":\"admin@example.com\",\"password\":\"safe-test-password\",\"rememberMe\":false}"))
                 .andExpect(status().isOk())
                 .andReturn();
 

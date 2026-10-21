@@ -15,4 +15,12 @@ public record ChatRoomRequest() {
   // 구성원 초대 요청
   public record MemberRequest(@NotNull Long membershipId) {
   }
+
+  // 그룹 채팅방 이름 변경 요청
+  public record RenameRequest(@NotBlank @Size(max = 100) String name) {
+  }
+
+  // 텍스트 메시지 전송 요청
+  public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content) {
+  }
 }

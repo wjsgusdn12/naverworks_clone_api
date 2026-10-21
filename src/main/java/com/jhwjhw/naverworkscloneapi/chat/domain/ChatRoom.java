@@ -56,6 +56,11 @@ public class ChatRoom {
         this.ownerMembership = ownerMembership;
     }
 
+    // 그룹 채팅방의 이름만 변경.
+    public void rename(String name) {
+        this.name = name;
+    }
+
     // 채팅방 종료
     public void end() {
         this.endedAt = Instant.now();

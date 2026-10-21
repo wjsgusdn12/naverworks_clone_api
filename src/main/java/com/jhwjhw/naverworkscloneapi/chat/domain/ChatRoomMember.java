@@ -31,6 +31,10 @@ public class ChatRoomMember {
     // 나간 시간
     private Instant leftAt;
 
+    // 마지막으로 읽은 메시지 ID. 메시지별 읽음 행을 만들지 않고 읽음 위치만 보관.
+    @Column(name = "last_read_message_id")
+    private Long lastReadMessageId;
+
     protected ChatRoomMember() {
     }
 
@@ -54,5 +58,12 @@ public class ChatRoomMember {
     // 활동 중인지 확인
     public boolean isActive() {
         return leftAt == null;
+    }
+
+    // 현재 방에서 확인한 가장 최신 메시지 위치를 저장.
+    public void markRead(Long messageId) {
+        if (messageId != null && (lastReadMessageId == null || messageId > lastReadMessageId)) {
+            this.lastReadMessageId = messageId;
+        }
     }
 }

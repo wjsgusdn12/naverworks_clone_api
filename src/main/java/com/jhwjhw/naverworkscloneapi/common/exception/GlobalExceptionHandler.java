@@ -2,6 +2,7 @@ package com.jhwjhw.naverworkscloneapi.common.exception;
 
 import com.jhwjhw.naverworkscloneapi.auth.InvalidAuthenticationException;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookException;
+import com.jhwjhw.naverworkscloneapi.chat.ChatException;
 import com.jhwjhw.naverworkscloneapi.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+        // 채팅 도메인 규칙 위반 처리
+        @ExceptionHandler(ChatException.class)
+        public ResponseEntity<ApiResponse<Void>> handleChatException(ChatException exception, HttpServletRequest request) {
+                log.warn("Chat request rejected. code={}, method={}, path={}", exception.getCode(), request.getMethod(),
+                                request.getRequestURI());
+                return ResponseEntity.badRequest().body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+        }
 
         // 주소록 관련 예외 처리
         @ExceptionHandler(AddressBookException.class)

@@ -15,7 +15,9 @@
 - Spring Boot가 Supabase PostgreSQL에 연결되고 Flyway V1·V2 스키마가 적용됨.
 - 실제 로그인 API와 프론트 연동은 아직 진행 전이며, 프론트 목업 인증을 유지 중.
 - JWT 액세스·리프레시 토큰 인증 API와 최소 Spring Security 인가를 구현함. 성공·실패 JSON은 `ApiResponse<T>` 형식으로 통일했으며 OAuth2 로그인은 미구현.
-- 나머지 조직/채팅/Redis/예약/통계/모니터링/AI 기능은 **구현됐다고 확인할 수 없음**.
+- 주소록·조직 기본 조회와 구성원 즐겨찾기, 검색 기록 기능은 구현되어 프론트와 연동됨.
+- 메신저 MVP REST 기반(1:1/그룹방, 메시지 전송·커서 조회·읽음 위치·읽음 멤버 조회)은 구현됨. 실시간 WebSocket/STOMP, Redis Presence/PubSub, 첨부·이모지·수정·삭제·답장 기능은 아직 미구현.
+- 예약/통계/모니터링/AI 기능은 **구현됐다고 확인할 수 없음**.
 
 ## 2. 기술 선택 대기
 
@@ -68,7 +70,9 @@ Next.js 로그인 UI
 | 프론트 로그인 연동 | 미구현 | 기존 목업 인증 유지 |
 | RDBMS 연결 | 완료 | Supabase PostgreSQL + Flyway V1·V2 적용 확인 |
 | Security USER/ADMIN 실제 인가 | 최소 구현 | JWT role 클레임을 `ROLE_*` 권한으로 변환 |
-| Messenger ~ AI/배포 | 계획 | 구현 여부 소스 조사 전 |
+| Messenger REST MVP | 구현 | 채팅방·메시지·읽음 위치·Cursor Pagination API |
+| Messenger 실시간/확장 기능 | 미구현 | WebSocket/STOMP, Redis, 첨부·수정·삭제·답장 등 |
+| AI/배포 | 계획 | 구현 여부 소스 조사 전 |
 
 ## 6. 매 작업 종료 시 기록 템플릿
 

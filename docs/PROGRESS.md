@@ -84,6 +84,20 @@ Next.js 로그인 UI
 - 검증: API `./mvnw.cmd -q -DskipTests compile` 성공, Front `npm run lint`, `npm run build` 성공.
 - Git Commit/Push: 수행하지 않음.
 
+### 2026-10-22 / 다중 회사 즐겨찾기·메시지
+- 사용자 요청: 다른 회사 구성원도 즐겨찾기와 메시지에 연동.
+- 결정 사항: 즐겨찾기는 개인 목록으로 회사 필터 없이 조회한다. 1:1·그룹 채팅방은 다른 회사 활성 구성원도 참가할 수 있다.
+- 보안 규칙: 채팅방 메시지·조회·관리 권한은 회사가 아니라 활성 채팅방 참가자 여부로 검증한다. 주소록 그룹은 기존처럼 같은 회사 범위를 유지한다.
+- 검증: API `./mvnw.cmd -q -DskipTests compile` 성공.
+- Git Commit/Push: 수행하지 않음.
+
+### 2026-10-22 / 새 메시지방 정렬
+- 사용자 요청: 새 메시지방도 대화 시작 전 목록 최상단에 표시.
+- 결정 사항: 채팅방 목록은 마지막 메시지 시각이 있으면 그 시각, 없으면 생성 시각을 기준으로 최신순 정렬한다.
+- Front 반영: 새 방 생성 직후 해당 방을 선택한 뒤 목록을 갱신한다.
+- 검증: API `./mvnw.cmd -q -DskipTests compile` 성공, Front `npm run lint`, `npm run build` 성공.
+- Git Commit/Push: 수행하지 않음.
+
 ### YYYY-MM-DD / Phase N
 - 사용자 요청:
 - 사용자 승인 여부:

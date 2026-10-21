@@ -89,11 +89,14 @@ public class AddressBookService {
         PageRequest pageable = PageRequest.of(normalizedPage, normalizedSize, toSort(sort, direction));
 
         Long targetCompanyId = companyId == null ? requester.getCompany().getId() : companyId;
-        if (!companyRepository.existsById(targetCompanyId)) {
+        if (companyId != null && !companyRepository.existsById(targetCompanyId)) {
             throw new AddressBookException("ADDRESS_BOOK_COMPANY_NOT_FOUND", "회사를 찾을 수 없습니다.");
         }
 
-        Specification<Membership> specification = Specification.where(companyEquals(targetCompanyId))
+        // 즐겨찾기는 회사와 무관한 개인 목록이므로 회사 기본 필터를 적용하지 않음.
+        Specification<Membership> specification = Specification.where(favoriteOnly && companyId == null
+                        ? Specification.unrestricted()
+                        : companyEquals(targetCompanyId))
                 .and(keywordContains(keyword))
                 .and(departmentEquals(departmentId))
                 .and(accountEnabledEquals(enabled));
@@ -186,7 +189,8 @@ public class AddressBookService {
     @Transactional
     public void createFavorite(Long requesterMembershipId, Long targetMembershipId) {
         Membership requester = findMembership(requesterMembershipId);
-        Membership target = findMembershipInCompany(targetMembershipId, requester.getCompany().getId());
+        // 주소록 전체 조직도에서 선택한 다른 회사 구성원도 개인 즐겨찾기에 추가 가능.
+        Membership target = findMembership(targetMembershipId);
         if (memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent()) {
             return;
         }

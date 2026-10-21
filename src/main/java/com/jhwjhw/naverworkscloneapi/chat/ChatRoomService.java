@@ -33,7 +33,7 @@ public class ChatRoomService {
     @Transactional
     public ChatRoomResponse.Room createDirect(Long requesterId, Long targetId) {
         Membership requester = activeMembership(requesterId);
-        Membership target = sameCompany(requester, targetId);
+        Membership target = activeMembership(targetId);
         if (requesterId.equals(targetId)) {
             throw new ChatException("CHAT_DIRECT_SELF_NOT_ALLOWED", "본인과 1:1 채팅방을 만들 수 없습니다.");
         }
@@ -85,7 +85,7 @@ public class ChatRoomService {
 
         ChatRoom room = roomRepository.save(new ChatRoom(requester.getCompany(), ChatRoomType.GROUP, request.name().trim(), requester));
         for (Long memberId : memberIds) {
-            memberRepository.save(new ChatRoomMember(room, sameCompany(requester, memberId)));
+            memberRepository.save(new ChatRoomMember(room, activeMembership(memberId)));
         }
         systemMessage(room, requester, requester.getUserAccount().getDisplayName() + "님이 그룹 채팅방을 만들었습니다.");
         log.info("Group chat room created. roomId={}, ownerId={}, memberCount={}", room.getId(), requesterId, memberIds.size());
@@ -99,8 +99,10 @@ public class ChatRoomService {
                 .map(ChatRoomMember::getChatRoom)
                 .filter(room -> room.getEndedAt() == null)
                 .map(room -> room(room, requesterId))
-                .sorted(Comparator.comparing(ChatRoomResponse.Room::lastMessageAt,
-                        Comparator.nullsLast(Comparator.reverseOrder())))
+                // 대화 전 새 방은 생성 시각을 사용해 목록 최상단에 배치.
+                .sorted(Comparator.comparing(
+                        room -> room.lastMessageAt() == null ? room.createdAt() : room.lastMessageAt(),
+                        Comparator.reverseOrder()))
                 .toList();
     }
 
@@ -117,7 +119,7 @@ public class ChatRoomService {
     public void invite(Long requesterId, Long roomId, Long targetId) {
         ChatRoom room = owner(roomId, requesterId);
         Membership requester = activeMembership(requesterId);
-        Membership target = sameCompany(requester, targetId);
+        Membership target = activeMembership(targetId);
         if (memberRepository.findByChatRoomIdAndMembershipId(roomId, targetId).isPresent()) {
             ChatRoomMember member = memberRepository.findByChatRoomIdAndMembershipId(roomId, targetId).orElseThrow();
             if (member.isActive()) {
@@ -236,14 +238,6 @@ public class ChatRoomService {
             throw new ChatException("CHAT_MEMBER_INACTIVE", "비활성 구성원은 채팅을 사용할 수 없습니다.");
         }
         return membership;
-    }
-
-    private Membership sameCompany(Membership requester, Long targetId) {
-        Membership target = activeMembership(targetId);
-        if (!target.getCompany().getId().equals(requester.getCompany().getId())) {
-            throw new ChatException("CHAT_CROSS_COMPANY_DENIED", "다른 회사 구성원은 채팅방에 참여할 수 없습니다.");
-        }
-        return target;
     }
 
     private ChatRoomMember active(Long roomId, Long membershipId) {

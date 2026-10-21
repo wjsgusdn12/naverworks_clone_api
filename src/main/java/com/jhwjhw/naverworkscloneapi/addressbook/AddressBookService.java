@@ -341,10 +341,26 @@ public class AddressBookService {
             return Specification.unrestricted();
         }
         String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+        String phonePattern = "%" + normalizePhoneKeyword(keyword) + "%";
         return (root, query, criteriaBuilder) -> criteriaBuilder.or(
                 criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("displayName")), pattern),
-                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("email")), pattern)
+                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("email")), pattern),
+                // 연락처는 하이픈·공백을 제거해 01012345678과 010-1234-5678을 동일하게 검색.
+                criteriaBuilder.like(
+                        criteriaBuilder.function(
+                                "replace",
+                                String.class,
+                                criteriaBuilder.function("replace", String.class, root.get("phoneNumber"), criteriaBuilder.literal("-"), criteriaBuilder.literal("")),
+                                criteriaBuilder.literal(" "),
+                                criteriaBuilder.literal("")
+                        ),
+                        phonePattern
+                )
         );
+    }
+
+    private String normalizePhoneKeyword(String keyword) {
+        return keyword.replace("-", "").replace(" ", "");
     }
 
     private Specification<Membership> departmentEquals(Long departmentId) {

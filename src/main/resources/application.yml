@@ -15,6 +15,12 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+    # PostgreSQL 전용 인덱스는 운영 DB에서만 적용하고 H2 단위 테스트에서는 제외.
+    locations: classpath:db/migration,classpath:db/migration-postgresql
+
+server:
+  # 로컬·배포 환경 모두 기본 9090을 사용하고 필요하면 환경 변수로 덮어씀.
+  port: ${SERVER_PORT:9090}
 
 app:
   cors:

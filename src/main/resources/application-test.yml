@@ -7,6 +7,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  flyway:
+    # H2는 PostgreSQL의 pg_trgm 확장을 지원하지 않아 공통 마이그레이션만 검증.
+    locations: classpath:db/migration
 
 app:
   cors:

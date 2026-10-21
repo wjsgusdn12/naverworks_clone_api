@@ -16,6 +16,9 @@ public final class AddressBookRequest {
     public record FavoriteRequest(@NotNull @Positive Long targetMembershipId) {
     }
 
+    public record SearchHistoryCreateRequest(@NotBlank @Size(max = 100) String keyword) {
+    }
+
     public record PresenceRequest(@NotNull PresenceStatus status, @Positive Integer awayHours) {
     }
 

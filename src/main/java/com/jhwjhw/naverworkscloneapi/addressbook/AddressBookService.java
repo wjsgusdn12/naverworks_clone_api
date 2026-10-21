@@ -8,6 +8,7 @@ import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.MemberPrese
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.MemberResponse;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.OrganizationResponse;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Department;
+import com.jhwjhw.naverworkscloneapi.identity.domain.AddressBookSearchHistory;
 import com.jhwjhw.naverworkscloneapi.identity.domain.ContactGroup;
 import com.jhwjhw.naverworkscloneapi.identity.domain.ContactGroupMember;
 import com.jhwjhw.naverworkscloneapi.identity.domain.MemberFavorite;
@@ -15,6 +16,7 @@ import com.jhwjhw.naverworkscloneapi.identity.repository.ContactGroupMemberRepos
 import com.jhwjhw.naverworkscloneapi.identity.repository.ContactGroupRepository;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.AddressBookSearchHistoryRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import jakarta.persistence.criteria.JoinType;
@@ -40,6 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AddressBookService {
 
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int SUGGESTION_PAGE_SIZE = 50;
+    private static final int MAX_SEARCH_HISTORY_SIZE = 10;
     private static final int MAX_AWAY_HOURS = 168;
 
     private final MembershipRepository membershipRepository;
@@ -47,6 +51,7 @@ public class AddressBookService {
     private final MemberFavoriteRepository memberFavoriteRepository;
     private final ContactGroupRepository contactGroupRepository;
     private final ContactGroupMemberRepository contactGroupMemberRepository;
+    private final AddressBookSearchHistoryRepository addressBookSearchHistoryRepository;
 
     @Transactional(readOnly = true)
     public OrganizationResponse getOrganization(Long requesterMembershipId) {
@@ -95,6 +100,64 @@ public class AddressBookService {
                 .toList();
 
         return new MemberPageResponse(content, memberPage.getNumber(), memberPage.getSize(), memberPage.getTotalElements(), memberPage.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
+    public MemberPageResponse getMemberSuggestions(Long requesterMembershipId, String keyword, int page, int size) {
+        if (keyword == null || keyword.isBlank()) {
+            return new MemberPageResponse(List.of(), 0, SUGGESTION_PAGE_SIZE, 0, 0);
+        }
+
+        // 자동완성은 이름 순서로만 조회해 입력 중 결과가 흔들리지 않게 유지.
+        return getMembers(
+                requesterMembershipId,
+                keyword,
+                null,
+                null,
+                page,
+                Math.min(Math.max(size, 1), SUGGESTION_PAGE_SIZE),
+                "name",
+                "asc",
+                false
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<AddressBookResponse.SearchHistoryResponse> getSearchHistory(Long requesterMembershipId) {
+        return addressBookSearchHistoryRepository.findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId).stream()
+                .limit(MAX_SEARCH_HISTORY_SIZE)
+                .map(history -> new AddressBookResponse.SearchHistoryResponse(history.getId(), history.getKeyword(), history.getUpdatedAt()))
+                .toList();
+    }
+
+    @Transactional
+    public void createSearchHistory(Long requesterMembershipId, String keyword) {
+        Membership requester = findMembership(requesterMembershipId);
+        String normalizedKeyword = keyword.trim();
+        AddressBookSearchHistory history = addressBookSearchHistoryRepository
+                .findByOwnerMembershipIdAndKeyword(requesterMembershipId, normalizedKeyword)
+                .orElseGet(() -> new AddressBookSearchHistory(requester, normalizedKeyword));
+        history.touch();
+        addressBookSearchHistoryRepository.save(history);
+
+        List<AddressBookSearchHistory> histories = addressBookSearchHistoryRepository.findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId);
+        if (histories.size() > MAX_SEARCH_HISTORY_SIZE) {
+            addressBookSearchHistoryRepository.deleteAll(histories.subList(MAX_SEARCH_HISTORY_SIZE, histories.size()));
+        }
+    }
+
+    @Transactional
+    public void deleteSearchHistory(Long requesterMembershipId) {
+        addressBookSearchHistoryRepository.deleteByOwnerMembershipId(requesterMembershipId);
+    }
+
+    @Transactional
+    public void deleteSearchHistoryItem(Long requesterMembershipId, Long searchHistoryId) {
+        // 본인 검색어만 삭제해 다른 사용자의 최근 검색어를 보호.
+        AddressBookSearchHistory history = addressBookSearchHistoryRepository
+                .findByIdAndOwnerMembershipId(searchHistoryId, requesterMembershipId)
+                .orElseThrow(() -> new AddressBookException("ADDRESS_BOOK_SEARCH_HISTORY_NOT_FOUND", "최근 검색어를 찾을 수 없습니다."));
+        addressBookSearchHistoryRepository.delete(history);
     }
 
     @Transactional(readOnly = true)

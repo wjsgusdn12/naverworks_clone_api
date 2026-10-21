@@ -7,6 +7,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -49,6 +50,47 @@ public class AddressBookController {
     ) {
         return ApiResponse.success("ADDRESS_BOOK_MEMBER_DETAIL_FOUND", "구성원 상세 정보를 조회했습니다.",
                 addressBookService.getMemberDetail(membershipId(jwt), membershipId));
+    }
+
+    @GetMapping("/member/suggest")
+    public ApiResponse<AddressBookResponse.MemberPageResponse> memberSuggest(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return ApiResponse.success("ADDRESS_BOOK_MEMBER_SUGGEST_FOUND", "구성원 검색 미리보기를 조회했습니다.",
+                addressBookService.getMemberSuggestions(membershipId(jwt), keyword, page, size));
+    }
+
+    @GetMapping("/searchHistory")
+    public ApiResponse<java.util.List<AddressBookResponse.SearchHistoryResponse>> searchHistory(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_FOUND", "최근 검색어를 조회했습니다.",
+                addressBookService.getSearchHistory(membershipId(jwt)));
+    }
+
+    @PostMapping("/searchHistory/create")
+    public ApiResponse<Void> createSearchHistory(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddressBookRequest.SearchHistoryCreateRequest request
+    ) {
+        addressBookService.createSearchHistory(membershipId(jwt), request.keyword());
+        return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_CREATED", "최근 검색어를 저장했습니다.", null);
+    }
+
+    @PostMapping("/searchHistory/delete")
+    public ApiResponse<Void> deleteSearchHistory(@AuthenticationPrincipal Jwt jwt) {
+        addressBookService.deleteSearchHistory(membershipId(jwt));
+        return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_DELETED", "최근 검색어를 전체 삭제했습니다.", null);
+    }
+
+    @PostMapping("/searchHistory/delete/{searchHistoryId}")
+    public ApiResponse<Void> deleteSearchHistoryItem(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable Long searchHistoryId
+    ) {
+        addressBookService.deleteSearchHistoryItem(membershipId(jwt), searchHistoryId);
+        return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_ITEM_DELETED", "최근 검색어를 삭제했습니다.", null);
     }
 
     @PostMapping("/favorite/create")

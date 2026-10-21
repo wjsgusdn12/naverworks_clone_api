@@ -20,6 +20,9 @@ public final class AddressBookResponse {
     public record MemberPageResponse(List<MemberResponse> content, int page, int size, long totalElements, int totalPages) {
     }
 
+    public record SearchHistoryResponse(Long id, String keyword, Instant updatedAt) {
+    }
+
     public record MemberResponse(
             Long membershipId,
             String displayName,

@@ -58,6 +58,22 @@ public class ChatRoomService {
         return room(room, requesterId);
     }
 
+    // 개인 메모처럼 사용하는 나와의 채팅방은 멤버 한 명만 유지.
+    @Transactional
+    public ChatRoomResponse.Room createSelf(Long requesterId) {
+        Membership requester = activeMembership(requesterId);
+        return memberRepository.findByMembershipId(requesterId).stream()
+                .map(ChatRoomMember::getChatRoom)
+                .filter(room -> room.getRoomType() == ChatRoomType.SELF && room.getEndedAt() == null)
+                .findFirst()
+                .map(room -> room(room, requesterId))
+                .orElseGet(() -> {
+                    ChatRoom room = roomRepository.save(new ChatRoom(requester.getCompany(), ChatRoomType.SELF, null, null));
+                    memberRepository.save(new ChatRoomMember(room, requester));
+                    return room(room, requesterId);
+                });
+    }
+
     @Transactional
     public ChatRoomResponse.Room createGroup(Long requesterId, ChatRoomRequest.GroupCreateRequest request) {
         Membership requester = activeMembership(requesterId);
@@ -91,8 +107,10 @@ public class ChatRoomService {
     @Transactional(readOnly = true)
     public ChatRoomResponse.Detail detail(Long requesterId, Long roomId) {
         active(roomId, requesterId);
-        return new ChatRoomResponse.Detail(room(roomById(roomId), requesterId), memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId).stream()
-                .map(member -> member.getMembership().getId()).toList());
+        List<ChatRoomMember> activeMembers = memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId);
+        return new ChatRoomResponse.Detail(room(roomById(roomId), requesterId), activeMembers.stream()
+                .map(member -> member.getMembership().getId()).toList(), activeMembers.stream()
+                .map(this::memberProfile).toList());
     }
 
     @Transactional
@@ -272,10 +290,17 @@ public class ChatRoomService {
         ChatMessage lastMessage = latest.isEmpty() ? null : latest.getFirst();
         ChatRoomMember requester = memberRepository.findByChatRoomIdAndMembershipId(room.getId(), requesterId).orElseThrow();
         long unreadCount = messageRepository.countUnread(room.getId(), requesterId, requester.getLastReadMessageId(), ChatMessageType.TEXT);
+        ChatRoomMember directMember = room.getRoomType() == ChatRoomType.DIRECT
+                ? memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId()).stream().filter(member -> !member.getMembership().getId().equals(requesterId)).findFirst().orElse(null)
+                : null;
         return new ChatRoomResponse.Room(room.getId(), room.getRoomType().name(), room.getName(),
                 room.getOwnerMembership() == null ? null : room.getOwnerMembership().getId(),
                 memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId()).size(), room.getCreatedAt(),
-                lastMessage == null ? null : lastMessage.getContent(), lastMessage == null ? null : lastMessage.getCreatedAt(), unreadCount);
+                lastMessage == null ? null : lastMessage.getContent(), lastMessage == null ? null : lastMessage.getCreatedAt(), lastMessage == null ? null : lastMessage.getSenderMembership().getId(), unreadCount,
+                directMember == null ? null : directMember.getMembership().getId(), directMember == null ? null : directMember.getMembership().getUserAccount().getDisplayName(),
+                directMember == null || directMember.getMembership().getJobGrade() == null ? null : directMember.getMembership().getJobGrade().getName(),
+                directMember == null || directMember.getMembership().getDepartment() == null ? null : directMember.getMembership().getDepartment().getName(),
+                directMember == null ? null : directMember.getMembership().getCompany().getName());
     }
 
     private ChatRoomResponse.Message message(ChatMessage message, Long requesterId) {
@@ -292,5 +317,13 @@ public class ChatRoomService {
         String jobGrade = membership.getJobGrade() == null ? null : membership.getJobGrade().getName();
         String departmentName = membership.getDepartment() == null ? null : membership.getDepartment().getName();
         return new ChatRoomResponse.ReadMember(membership.getId(), membership.getUserAccount().getDisplayName(), jobGrade, departmentName, read);
+    }
+
+    private ChatRoomResponse.MemberProfile memberProfile(ChatRoomMember member) {
+        Membership membership = member.getMembership();
+        return new ChatRoomResponse.MemberProfile(membership.getId(), membership.getUserAccount().getDisplayName(),
+                membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
+                membership.getDepartment() == null ? null : membership.getDepartment().getName(),
+                membership.getCompany().getName());
     }
 }

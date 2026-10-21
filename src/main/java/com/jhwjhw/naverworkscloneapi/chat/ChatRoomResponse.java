@@ -6,11 +6,16 @@ import java.util.List;
 public record ChatRoomResponse() {
   // 채팅방 목록 응답
   public record Room(Long id, String type, String name, Long ownerMembershipId, int memberCount, Instant createdAt,
-      String lastMessage, Instant lastMessageAt, long unreadCount) {
+      String lastMessage, Instant lastMessageAt, Long lastSenderMembershipId, long unreadCount, Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName, String directCompanyName) {
   }
 
   // 채팅방 상세 응답
-  public record Detail(Room room, List<Long> memberIds) {
+  public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members) {
+  }
+
+  // 1:1 채팅방 상단과 참여자 화면에 공통으로 사용하는 구성원 프로필.
+  public record MemberProfile(Long membershipId, String displayName, String jobGradeName,
+      String departmentName, String companyName) {
   }
 
   // 메시지 목록 응답

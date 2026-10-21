@@ -39,6 +39,11 @@ public class ChatRoomController {
         service.createDirect(id(jwt), r.targetMembershipId()));
   }
 
+  @PostMapping("/self/create")
+  public ApiResponse<ChatRoomResponse.Room> self(@AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success("CHAT_SELF_ROOM_READY", "나와의 채팅방을 준비했습니다.", service.createSelf(id(jwt)));
+  }
+
   // 그룹 채팅방 생성
   @PostMapping("/group/create")
   public ApiResponse<ChatRoomResponse.Room> group(@AuthenticationPrincipal Jwt jwt,

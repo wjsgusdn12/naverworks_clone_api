@@ -14,6 +14,7 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.ContactGroupMember;
 import com.jhwjhw.naverworkscloneapi.identity.domain.MemberFavorite;
 import com.jhwjhw.naverworkscloneapi.identity.repository.ContactGroupMemberRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.ContactGroupRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.CompanyRepository;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.AddressBookSearchHistoryRepository;
@@ -47,6 +48,7 @@ public class AddressBookService {
     private static final int MAX_AWAY_HOURS = 168;
 
     private final MembershipRepository membershipRepository;
+    private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final MemberFavoriteRepository memberFavoriteRepository;
     private final ContactGroupRepository contactGroupRepository;
@@ -54,19 +56,25 @@ public class AddressBookService {
     private final AddressBookSearchHistoryRepository addressBookSearchHistoryRepository;
 
     @Transactional(readOnly = true)
-    public OrganizationResponse getOrganization(Long requesterMembershipId) {
+    public List<OrganizationResponse> getOrganization(Long requesterMembershipId) {
         Membership requester = findMembership(requesterMembershipId);
-        List<DepartmentResponse> departments = departmentRepository.findByCompanyIdOrderByNameAsc(requester.getCompany().getId())
-                .stream()
-                .map(department -> new DepartmentResponse(department.getId(), department.getName(), department.isEnabled()))
+        return companyRepository.findAllByOrderByNameAsc().stream()
+                .map(company -> new OrganizationResponse(
+                        company.getId(),
+                        company.getName(),
+                        company.getId().equals(requester.getCompany().getId()),
+                        departmentRepository.findByCompanyIdOrderByNameAsc(company.getId()).stream()
+                                .map(department -> new DepartmentResponse(department.getId(), department.getName(), department.isEnabled()))
+                                .toList()
+                ))
                 .toList();
-        return new OrganizationResponse(requester.getCompany().getId(), requester.getCompany().getName(), departments);
     }
 
     @Transactional(readOnly = true)
     public MemberPageResponse getMembers(
             Long requesterMembershipId,
             String keyword,
+            Long companyId,
             Long departmentId,
             Boolean enabled,
             int page,
@@ -80,7 +88,12 @@ public class AddressBookService {
         int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         PageRequest pageable = PageRequest.of(normalizedPage, normalizedSize, toSort(sort, direction));
 
-        Specification<Membership> specification = Specification.where(companyEquals(requester.getCompany().getId()))
+        Long targetCompanyId = companyId == null ? requester.getCompany().getId() : companyId;
+        if (!companyRepository.existsById(targetCompanyId)) {
+            throw new AddressBookException("ADDRESS_BOOK_COMPANY_NOT_FOUND", "회사를 찾을 수 없습니다.");
+        }
+
+        Specification<Membership> specification = Specification.where(companyEquals(targetCompanyId))
                 .and(keywordContains(keyword))
                 .and(departmentEquals(departmentId))
                 .and(accountEnabledEquals(enabled));
@@ -112,6 +125,7 @@ public class AddressBookService {
         return getMembers(
                 requesterMembershipId,
                 keyword,
+                null,
                 null,
                 null,
                 page,
@@ -162,8 +176,9 @@ public class AddressBookService {
 
     @Transactional(readOnly = true)
     public MemberDetailResponse getMemberDetail(Long requesterMembershipId, Long targetMembershipId) {
-        Membership requester = findMembership(requesterMembershipId);
-        Membership target = findMembershipInCompany(targetMembershipId, requester.getCompany().getId());
+        findMembership(requesterMembershipId);
+        // 조직도 전체 조회에서는 다른 회사 프로필도 읽기 전용으로 확인 가능.
+        Membership target = findMembership(targetMembershipId);
         boolean favorite = memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent();
         return toMemberDetailResponse(target, requesterMembershipId, favorite);
     }
@@ -172,10 +187,6 @@ public class AddressBookService {
     public void createFavorite(Long requesterMembershipId, Long targetMembershipId) {
         Membership requester = findMembership(requesterMembershipId);
         Membership target = findMembershipInCompany(targetMembershipId, requester.getCompany().getId());
-        if (requesterMembershipId.equals(targetMembershipId)) {
-            throw new AddressBookException("ADDRESS_BOOK_FAVORITE_SELF_FORBIDDEN", "본인은 즐겨찾기에 추가할 수 없습니다.");
-        }
-
         if (memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent()) {
             return;
         }

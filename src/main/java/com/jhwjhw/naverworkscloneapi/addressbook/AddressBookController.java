@@ -22,7 +22,7 @@ public class AddressBookController {
     private final AddressBookService addressBookService;
 
     @GetMapping("/organization")
-    public ApiResponse<AddressBookResponse.OrganizationResponse> organization(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<java.util.List<AddressBookResponse.OrganizationResponse>> organization(@AuthenticationPrincipal Jwt jwt) {
         return ApiResponse.success("ADDRESS_BOOK_ORGANIZATION_FOUND", "조직 정보를 조회했습니다.",
                 addressBookService.getOrganization(membershipId(jwt)));
     }
@@ -31,6 +31,7 @@ public class AddressBookController {
     public ApiResponse<AddressBookResponse.MemberPageResponse> member(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long companyId,
             @RequestParam(required = false) Long departmentId,
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(defaultValue = "0") int page,
@@ -40,7 +41,7 @@ public class AddressBookController {
             @RequestParam(defaultValue = "false") boolean favoriteOnly
     ) {
         return ApiResponse.success("ADDRESS_BOOK_MEMBER_FOUND", "구성원 목록을 조회했습니다.",
-                addressBookService.getMembers(membershipId(jwt), keyword, departmentId, enabled, page, size, sort, direction, favoriteOnly));
+                addressBookService.getMembers(membershipId(jwt), keyword, companyId, departmentId, enabled, page, size, sort, direction, favoriteOnly));
     }
 
     @GetMapping("/member/detail")

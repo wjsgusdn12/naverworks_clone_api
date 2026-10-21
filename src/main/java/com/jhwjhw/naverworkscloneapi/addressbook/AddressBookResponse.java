@@ -11,7 +11,7 @@ public final class AddressBookResponse {
         // 정적 DTO 묶음 클래스는 인스턴스 생성 금지.
     }
 
-    public record OrganizationResponse(Long companyId, String companyName, List<DepartmentResponse> departments) {
+    public record OrganizationResponse(Long companyId, String companyName, boolean currentCompany, List<DepartmentResponse> departments) {
     }
 
     public record DepartmentResponse(Long id, String name, boolean enabled) {

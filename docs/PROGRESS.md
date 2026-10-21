@@ -76,6 +76,14 @@ Next.js 로그인 UI
 
 ## 6. 매 작업 종료 시 기록 템플릿
 
+### 2026-10-21 / 주소록 조직도 다중 회사 조회
+- 사용자 요청: 본인 즐겨찾기 허용, 모든 회사 조직도 조회, 조직도·회사·부서 펼치기/접기.
+- 결정 사항: 조직도는 모든 회사를 반환하고, 주소록 목록은 선택 회사 기준으로 조회한다. 채팅방의 회사 간 접근 제한은 유지한다.
+- API/DB/Front 계약 변화: `GET /api/v1/addressBook/organization`은 회사 배열을 반환하며, `GET /api/v1/addressBook/member`는 선택 `companyId`를 받는다. `member_favorite`의 본인 추가 금지 제약은 Flyway V15에서 제거한다.
+- 실제 수정 파일: API의 주소록 서비스·컨트롤러·응답 DTO·회사 Repository·V15, Front의 주소록 API 타입·주소록 화면.
+- 검증: API `./mvnw.cmd -q -DskipTests compile` 성공, Front `npm run lint`, `npm run build` 성공.
+- Git Commit/Push: 수행하지 않음.
+
 ### YYYY-MM-DD / Phase N
 - 사용자 요청:
 - 사용자 승인 여부:

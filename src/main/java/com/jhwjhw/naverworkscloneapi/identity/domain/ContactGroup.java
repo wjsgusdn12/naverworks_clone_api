@@ -18,28 +18,35 @@ import lombok.Getter;
 // 주소록 전용 그룹. 향후 메신저 채팅방과는 별도 도메인으로 연결.
 public class ContactGroup {
 
+    // 주소록 전용 그룹 ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 회사
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "company_id", nullable = false)
     private Company company;
 
+    // 주소록 전용 그룹 이름
     @Column(nullable = false, length = 100)
     private String name;
 
+    // 주소록 전용 그룹 소유자
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "master_membership_id", nullable = false)
     private Membership masterMembership;
 
+    // 주소록 전용 그룹 생성 시간
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    // 주소록 전용 그룹 생성
     protected ContactGroup() {
         // JPA 전용 기본 생성자.
     }
 
+    // 주소록 전용 그룹 생성
     public ContactGroup(Company company, String name, Membership masterMembership) {
         this.company = company;
         this.name = name;
@@ -47,6 +54,7 @@ public class ContactGroup {
         this.createdAt = Instant.now();
     }
 
+    // 주소록 전용 그룹 이름 변경
     public void rename(String name) {
         this.name = name;
     }

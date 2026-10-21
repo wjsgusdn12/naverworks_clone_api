@@ -17,16 +17,18 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class RestAccessDeniedHandler implements AccessDeniedHandler {
 
+    // API Response Writer
     private final ApiResponseWriter apiResponseWriter;
 
+    // 권한 오류 처리
     @Override
     public void handle(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AccessDeniedException accessDeniedException
+            HttpServletRequest request, // 요청 객체
+            HttpServletResponse response, // 응답 객체
+            AccessDeniedException accessDeniedException // 권한 오류 예외
     ) throws IOException {
         // 권한 오류의 원인은 남기되 토큰·개인정보는 로그에 포함하지 않음.
-        log.warn("Access denied. method={}, path={}", request.getMethod(), request.getRequestURI());
-        apiResponseWriter.writeFailure(response, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "접근 권한이 없습니다.");
+        log.warn("Access denied. method={}, path={}", request.getMethod(), request.getRequestURI()); // 로그 기록
+        apiResponseWriter.writeFailure(response, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "접근 권한이 없습니다."); // 오류 응답 쓰기
     }
 }

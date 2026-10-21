@@ -18,27 +18,34 @@ import lombok.Getter;
 // 주소록 검색어를 사용자별 최신순으로 보관.
 public class AddressBookSearchHistory {
 
+    // 주소록 검색어 기록 ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 주소록 검색어 기록 소유자
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "owner_membership_id", nullable = false)
     private Membership ownerMembership;
 
+    // 주소록 검색어
     @Column(nullable = false, length = 100)
     private String keyword;
 
+    // 주소록 검색어 기록 생성 시간
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    // 주소록 검색어 기록 수정 시간
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    // 주소록 검색어 기록 생성
     protected AddressBookSearchHistory() {
         // JPA 전용 기본 생성자.
     }
 
+    // 주소록 검색어 기록 생성
     public AddressBookSearchHistory(Membership ownerMembership, String keyword) {
         this.ownerMembership = ownerMembership;
         this.keyword = keyword;
@@ -46,6 +53,7 @@ public class AddressBookSearchHistory {
         this.updatedAt = this.createdAt;
     }
 
+    // 주소록 검색어 기록 수정
     public void touch() {
         this.updatedAt = Instant.now();
     }

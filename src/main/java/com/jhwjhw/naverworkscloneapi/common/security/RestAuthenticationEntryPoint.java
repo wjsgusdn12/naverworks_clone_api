@@ -17,21 +17,19 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
+    // API Response Writer
     private final ApiResponseWriter apiResponseWriter;
 
+    // 인증 오류 처리
     @Override
     public void commence(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AuthenticationException authenticationException
+            HttpServletRequest request, // 요청 객체
+            HttpServletResponse response, // 응답 객체
+            AuthenticationException authenticationException // 인증 오류 예외
     ) throws IOException {
         // Authorization 헤더 값은 기록하지 않고 요청 위치만 남김.
-        log.warn("Authentication required. method={}, path={}", request.getMethod(), request.getRequestURI());
-        apiResponseWriter.writeFailure(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                "AUTHENTICATION_REQUIRED",
-                "로그인이 필요하거나 인증 정보가 만료되었습니다."
-        );
+        log.warn("Authentication required. method={}, path={}", request.getMethod(), request.getRequestURI()); // 로그 기록
+        apiResponseWriter.writeFailure(response, HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED",
+                "로그인이 필요하거나 인증 정보가 만료되었습니다."); // 오류 응답 쓰기
     }
 }

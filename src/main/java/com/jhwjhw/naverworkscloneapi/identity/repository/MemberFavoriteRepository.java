@@ -6,12 +6,15 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+// 즐겨찾기 데이터를 조회·정리할 때 사용하는 JPA Repository.
 public interface MemberFavoriteRepository extends JpaRepository<MemberFavorite, Long> {
 
+    // 즐겨찾기 조회
     Optional<MemberFavorite> findByOwnerMembershipIdAndTargetMembershipId(Long ownerMembershipId, Long targetMembershipId);
 
-    // 즐겨찾기 전용 화면은 전체 구성원을 읽지 않고 이 사용자 행만 조회.
+    // 즐겨찾기 조회
     List<MemberFavorite> findByOwnerMembershipId(Long ownerMembershipId);
 
+    // 즐겨찾기 조회
     List<MemberFavorite> findByOwnerMembershipIdAndTargetMembershipIdIn(Long ownerMembershipId, Collection<Long> targetMembershipIds);
 }

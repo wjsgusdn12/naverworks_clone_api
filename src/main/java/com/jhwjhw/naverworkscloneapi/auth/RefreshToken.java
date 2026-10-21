@@ -20,31 +20,37 @@ import lombok.Getter;
 @Getter
 public class RefreshToken {
 
+    // 리프레시 토큰 ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 리프레시 토큰 ID
     @Column(name = "token_id", nullable = false, unique = true)
     private UUID tokenId;
 
+    // 구성원
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "membership_id", nullable = false)
     private Membership membership;
 
-    // 원문 토큰 대신 SHA-256 해시만 보관.
+    // 원문 토큰 대신 SHA-256 해시만 보관
     @Column(name = "token_hash", nullable = false, unique = true, length = 64)
     private String tokenHash;
 
-    // 로그인 유지 선택 여부를 보관해 토큰 재발급 뒤에도 쿠키 성격을 유지.
+    // 로그인 유지 선택 여부를 보관해 토큰 재발급 뒤에도 쿠키 성격을 유지
     @Column(name = "persistent_login", nullable = false)
     private boolean persistentLogin;
 
+    // 만료 시간
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    // 폐기 시간
     @Column(name = "revoked_at")
     private Instant revokedAt;
 
+    // 생성 시간
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -52,13 +58,13 @@ public class RefreshToken {
         // JPA가 DB 조회 결과로 객체를 만들 때 사용하는 기본 생성자.
     }
 
+    // 리프레시 토큰 생성
     public RefreshToken(
             UUID tokenId,
             Membership membership,
             String tokenHash,
             Instant expiresAt,
-            boolean persistentLogin
-    ) {
+            boolean persistentLogin) {
         this.tokenId = tokenId;
         this.membership = membership;
         this.tokenHash = tokenHash;
@@ -67,11 +73,13 @@ public class RefreshToken {
         this.createdAt = Instant.now();
     }
 
+    // 사용 가능한 토큰인지 확인
     public boolean isUsableAt(Instant now) {
         // 폐기되었거나 만료된 토큰은 재발급에 사용할 수 없음.
         return revokedAt == null && expiresAt.isAfter(now);
     }
 
+    // 폐기
     public void revoke(Instant revokedAt) {
         // 삭제 대신 폐기 시각을 남겨 탈취 토큰 재사용을 차단.
         this.revokedAt = revokedAt;

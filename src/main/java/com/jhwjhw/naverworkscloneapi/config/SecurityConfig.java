@@ -39,13 +39,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableConfigurationProperties(AppAuthProperties.class)
 public class SecurityConfig {
 
+    // SecurityFilterChain Bean 설정
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
             RestAuthenticationEntryPoint restAuthenticationEntryPoint,
-            RestAccessDeniedHandler restAccessDeniedHandler
-    ) throws Exception {
+            RestAccessDeniedHandler restAccessDeniedHandler) throws Exception {
         return http
                 // JWT를 Authorization 헤더로 전달하므로 서버 세션을 만들지 않음.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -54,7 +54,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         // 로그인 전에도 접근해야 하는 화면과 인증 시작 API.
                         .requestMatchers("/", "/error").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout")
+                        .permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 // Filter 단계의 401·403도 Controller 예외 응답과 같은 JSON 형식으로 반환.
@@ -68,6 +70,7 @@ public class SecurityConfig {
                 .build();
     }
 
+    // JWT Encoder Bean 설정
     @Bean
     public JwtEncoder jwtEncoder(SecretKey jwtSecretKey) {
         // 같은 비밀키로 HS256 JWT 서명을 생성.
@@ -76,6 +79,7 @@ public class SecurityConfig {
                 .build();
     }
 
+    // JWT Decoder Bean 설정
     @Bean
     public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, AppAuthProperties appAuthProperties) {
         NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
@@ -86,6 +90,7 @@ public class SecurityConfig {
         return jwtDecoder;
     }
 
+    // JWT Secret Key Bean 설정
     @Bean
     public SecretKey jwtSecretKey(AppAuthProperties appAuthProperties) {
         // 환경 변수의 Base64 문자열을 실제 HMAC 서명 키 바이트로 복원.
@@ -96,6 +101,7 @@ public class SecurityConfig {
         return new SecretKeySpec(decodedSecret, "HmacSHA256");
     }
 
+    // JWT Authentication Converter Bean 설정
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
@@ -103,21 +109,23 @@ public class SecurityConfig {
         return converter;
     }
 
+    // Password Encoder Bean 설정
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    // Role Authority 추출
     private Collection<GrantedAuthority> extractRoleAuthority(Jwt jwt) {
         // JWT의 ADMIN을 Spring Security가 이해하는 ROLE_ADMIN 형태로 변환.
         String role = jwt.getClaimAsString("role");
         return role == null ? List.of() : List.of(new SimpleGrantedAuthority("ROLE_" + role));
     }
 
+    // Cors Configuration Source Bean 설정
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
-            @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origin}") String allowedOrigin
-    ) {
+            @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origin}") String allowedOrigin) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(java.util.List.of(allowedOrigin));
         configuration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));

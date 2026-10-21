@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.domain.Specification;
 
-// 사용자 계정이 속한 회사·부서·역할 정보를 조회.
+// 사용자 계정이 속한 회사·부서·역할 정보를 조회·정리할 때 사용하는 JPA Repository.
 public interface MembershipRepository extends JpaRepository<Membership, Long>, JpaSpecificationExecutor<Membership> {
 
     // 초기 정책: 한 계정은 한 회사에만 소속되므로 단일 소속만 조회.
@@ -20,5 +20,6 @@ public interface MembershipRepository extends JpaRepository<Membership, Long>, J
     @EntityGraph(attributePaths = {"company", "userAccount", "department", "jobGrade"})
     Page<Membership> findAll(Specification<Membership> specification, Pageable pageable);
 
+    // 부서 존재 여부 조회
     boolean existsByDepartmentIdAndUserAccountEnabledTrue(Long departmentId);
 }

@@ -5,9 +5,11 @@ import jakarta.validation.constraints.NotBlank;
 
 // 로그인 요청 본문. @Valid가 이메일 형식과 빈 값을 먼저 검사.
 public record AuthRequest(
+        // 이메일
         @NotBlank @Email String email,
+        // 비밀번호
         @NotBlank String password,
-        // false면 브라우저를 닫을 때 만료되는 세션 쿠키로 발급.
+        // 기억하기 여부
         boolean rememberMe
 ) {
 }

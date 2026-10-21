@@ -38,6 +38,7 @@ public class AuthService {
     private final AppAuthProperties appAuthProperties;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    // 로그인
     @Transactional
     public AuthResult login(AuthRequest request) {
         // 계정 없음·비활성 계정·비밀번호 불일치를 같은 응답으로 처리해 계정 존재 여부를 숨김.
@@ -55,6 +56,7 @@ public class AuthService {
         return issueTokens(membership, request.rememberMe());
     }
 
+    // 토큰 갱신
     @Transactional
     public AuthResult refresh(String rawRefreshToken) {
         RefreshToken refreshToken = findUsableRefreshToken(rawRefreshToken);
@@ -64,6 +66,7 @@ public class AuthService {
         return issueTokens(refreshToken.getMembership(), refreshToken.isPersistentLogin());
     }
 
+    // 현재 로그인 구성원 정보 조회
     @Transactional(readOnly = true)
     public AuthMemberResponse getCurrentMember(Long membershipId) {
         Membership membership = membershipRepository.findById(membershipId)
@@ -71,6 +74,7 @@ public class AuthService {
         return toMemberResponse(membership);
     }
 
+    // 로그아웃
     @Transactional
     public void logout(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
@@ -83,9 +87,11 @@ public class AuthService {
         });
     }
 
+    // 리프레시 토큰 쿠키 생성
     public ResponseCookie createRefreshCookie(String rawRefreshToken, boolean persistentLogin) {
         // HttpOnly라 브라우저 JavaScript로 읽을 수 없어 XSS 노출 범위를 줄임.
-        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, rawRefreshToken)
+        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie
+                .from(REFRESH_TOKEN_COOKIE_NAME, rawRefreshToken)
                 .httpOnly(true)
                 .secure(appAuthProperties.refreshCookieSecure())
                 .sameSite("Strict")
@@ -99,6 +105,7 @@ public class AuthService {
         return cookieBuilder.build();
     }
 
+    // 리프레시 토큰 쿠키 삭제
     public ResponseCookie deleteRefreshCookie() {
         return ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, "")
                 .httpOnly(true)
@@ -109,6 +116,7 @@ public class AuthService {
                 .build();
     }
 
+    // 토큰 발급
     private AuthResult issueTokens(Membership membership, boolean persistentLogin) {
         Instant now = Instant.now();
         Instant accessTokenExpiresAt = now.plus(appAuthProperties.accessTokenExpiration());
@@ -130,18 +138,17 @@ public class AuthService {
                 membership,
                 hashToken(rawRefreshToken),
                 now.plus(appAuthProperties.refreshTokenExpiration()),
-                persistentLogin
-        ));
+                persistentLogin));
 
         AuthResponse response = new AuthResponse(
                 accessToken,
                 "Bearer",
                 appAuthProperties.accessTokenExpiration().toSeconds(),
-                toMemberResponse(membership)
-        );
+                toMemberResponse(membership));
         return new AuthResult(response, rawRefreshToken, persistentLogin);
     }
 
+    // 사용 가능한 리프레시 토큰 조회
     private RefreshToken findUsableRefreshToken(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             throw new InvalidAuthenticationException();
@@ -152,10 +159,12 @@ public class AuthService {
                 .orElseThrow(InvalidAuthenticationException::new);
     }
 
+    // 이메일 정규화
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 
+    // 랜덤 토큰 생성
     private String createRandomToken() {
         // 예측하기 어려운 난수 48바이트를 URL에 안전한 문자열로 변환.
         byte[] bytes = new byte[48];
@@ -163,6 +172,7 @@ public class AuthService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    // 토큰 해시
     private String hashToken(String rawToken) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256")
@@ -173,6 +183,7 @@ public class AuthService {
         }
     }
 
+    // 구성원 정보 응답 생성
     private AuthMemberResponse toMemberResponse(Membership membership) {
         UserAccount userAccount = membership.getUserAccount();
         return new AuthMemberResponse(
@@ -181,8 +192,7 @@ public class AuthService {
                 userAccount.getId(),
                 userAccount.getEmail(),
                 userAccount.getDisplayName(),
-                membership.getRole().name()
-        );
+                membership.getRole().name());
     }
 
     // Controller에 응답 본문과 HttpOnly 쿠키 값을 함께 전달하는 서비스 내부 결과 객체.

@@ -13,17 +13,19 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class ApiResponseWriter {
 
+    // Jackson ObjectMapper
     private final ObjectMapper objectMapper;
 
+    // 오류 응답 쓰기
     public void writeFailure(
-            HttpServletResponse response,
-            HttpStatus status,
-            String code,
-            String message
+            HttpServletResponse response, // 응답 객체
+            HttpStatus status, // 상태 코드
+            String code, // 오류 코드
+            String message // 오류 메시지
     ) throws IOException {
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getOutputStream(), ApiResponse.failure(code, message));
+        response.setStatus(status.value()); // 상태 코드 설정
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE); // 콘텐츠 타입 설정
+        response.setCharacterEncoding("UTF-8"); // 문자 인코딩 설정
+        objectMapper.writeValue(response.getOutputStream(), ApiResponse.failure(code, message)); // 응답 본문 쓰기
     }
 }

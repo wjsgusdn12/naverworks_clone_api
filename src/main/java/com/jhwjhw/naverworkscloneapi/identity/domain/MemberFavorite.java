@@ -17,24 +17,30 @@ import lombok.Getter;
 // 주소록 즐겨찾기는 소유 구성원별로 따로 보관.
 public class MemberFavorite {
 
+    // 주소록 즐겨찾기 ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 주소록 즐겨찾기 소유자
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "owner_membership_id", nullable = false)
     private Membership ownerMembership;
 
+    // 주소록 즐겨찾기 대상
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "target_membership_id", nullable = false)
     private Membership targetMembership;
 
+    // 주소록 즐겨찾기 생성 시간
     private Instant createdAt;
 
+    // 주소록 즐겨찾기 생성
     protected MemberFavorite() {
         // JPA 전용 기본 생성자.
     }
 
+    // 주소록 즐겨찾기 생성
     public MemberFavorite(Membership ownerMembership, Membership targetMembership) {
         this.ownerMembership = ownerMembership;
         this.targetMembership = targetMembership;

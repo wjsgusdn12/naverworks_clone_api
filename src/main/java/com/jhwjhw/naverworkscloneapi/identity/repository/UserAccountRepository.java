@@ -4,8 +4,9 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.UserAccount;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-// 이메일은 user_account의 유니크 식별자이므로 로그인 조회에 사용.
+// 사용자 계정 데이터를 조회·정리할 때 사용하는 JPA Repository.
 public interface UserAccountRepository extends JpaRepository<UserAccount, Long> {
 
+    // 이메일 조회
     Optional<UserAccount> findByEmail(String email);
 }

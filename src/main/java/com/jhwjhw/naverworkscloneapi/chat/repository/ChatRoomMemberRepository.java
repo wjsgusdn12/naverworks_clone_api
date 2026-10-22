@@ -25,4 +25,9 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
             + "and (member.lastReadMessageId is null or member.lastReadMessageId < :messageId)")
     long countUnreadMembers(@Param("roomId") Long roomId, @Param("senderMembershipId") Long senderMembershipId,
             @Param("messageId") Long messageId);
+
+    // 보낸 사람을 제외한 현재 참여자 수. 읽음 수 계산의 기준값으로 사용.
+    @Query("select count(member) from ChatRoomMember member where member.chatRoom.id = :roomId "
+            + "and member.leftAt is null and member.membership.id <> :senderMembershipId")
+    long countReadableMembers(@Param("roomId") Long roomId, @Param("senderMembershipId") Long senderMembershipId);
 }

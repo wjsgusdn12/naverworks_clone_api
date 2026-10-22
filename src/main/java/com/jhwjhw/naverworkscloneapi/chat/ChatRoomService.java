@@ -301,9 +301,13 @@ public class ChatRoomService {
         long unreadCount = message.getMessageType() == ChatMessageType.TEXT
                 ? memberRepository.countUnreadMembers(message.getChatRoom().getId(), message.getSenderMembership().getId(), message.getId())
                 : 0;
+        // unreadCount는 아직 읽지 않은 사람 수이므로, 화면용 읽음 수를 별도로 계산.
+        long readCount = message.getMessageType() == ChatMessageType.TEXT
+                ? Math.max(0, memberRepository.countReadableMembers(message.getChatRoom().getId(), message.getSenderMembership().getId()) - unreadCount)
+                : 0;
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(), message.getMessageType().name(),
-                message.getCreatedAt(), unreadCount);
+                message.getCreatedAt(), unreadCount, readCount);
     }
 
     private ChatRoomResponse.ReadMember readMember(ChatRoomMember member, boolean read) {

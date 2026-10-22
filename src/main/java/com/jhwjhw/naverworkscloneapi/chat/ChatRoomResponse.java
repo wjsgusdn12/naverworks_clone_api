@@ -20,7 +20,7 @@ public record ChatRoomResponse() {
 
   // 메시지 목록 응답
   public record Message(Long id, Long senderMembershipId, String senderName, String content, String type, Instant createdAt,
-      Long unreadCount) {
+      long unreadCount, long readCount) {
   }
 
   // 이전 메시지 조회 결과. nextCursor가 null이면 더 오래된 메시지가 없음.

@@ -29,8 +29,8 @@ app:
   auth:
     issuer: ${JWT_ISSUER:naverworks-clone-api}
     jwt-secret-base64: ${JWT_SECRET_BASE64}
-    # PT15M은 15분, P14D는 14일을 뜻하는 ISO-8601 시간 형식.
-    access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:PT15M}
-    refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:P14D}
+    # PT3H는 3시간, P7D는 7일을 뜻하는 ISO-8601 시간 형식.
+    access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:PT3H}
+    refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:P7D}
     # HTTPS 운영 환경에서는 true로 설정해 쿠키를 암호화 연결에서만 전송.
     refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:false}

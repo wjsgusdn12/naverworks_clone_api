@@ -31,7 +31,7 @@ public class AuthController {
                 return ResponseEntity.ok()
                                 .header(HttpHeaders.SET_COOKIE,
                                                 authService.createRefreshCookie(result.refreshToken(),
-                                                                result.persistentLogin()).toString())
+                                                                result.persistentLogin(), result.sessionExpiresAt()).toString())
                                 .body(ApiResponse.success("AUTH_LOGIN_SUCCESS", "로그인에 성공했습니다.", result.response()));
         }
 
@@ -44,7 +44,7 @@ public class AuthController {
                 return ResponseEntity.ok()
                                 .header(HttpHeaders.SET_COOKIE,
                                                 authService.createRefreshCookie(result.refreshToken(),
-                                                                result.persistentLogin()).toString())
+                                                                result.persistentLogin(), result.sessionExpiresAt()).toString())
                                 .body(ApiResponse.success("AUTH_TOKEN_REFRESHED", "인증 토큰을 갱신했습니다.", result.response()));
         }
 

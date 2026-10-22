@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Locale;
@@ -53,7 +54,7 @@ public class AuthService {
 
         // 비밀번호·토큰·이메일은 남기지 않고 인증 주체 식별자만 운영 로그에 기록.
         log.info("Login succeeded. membershipId={}", membership.getId());
-        return issueTokens(membership, request.rememberMe());
+        return issueTokens(membership, request.rememberMe(), Instant.now().plus(appAuthProperties.refreshTokenExpiration()));
     }
 
     // 토큰 갱신
@@ -63,7 +64,8 @@ public class AuthService {
         // 토큰을 한 번 쓰면 즉시 폐기하는 Rotation 방식으로 탈취 토큰 재사용을 줄임.
         refreshToken.revoke(Instant.now());
         log.debug("Refresh token rotated. membershipId={}", refreshToken.getMembership().getId());
-        return issueTokens(refreshToken.getMembership(), refreshToken.isPersistentLogin());
+        // Rotation 후에도 최초 로그인에서 정한 전체 세션 만료 시각은 연장하지 않음.
+        return issueTokens(refreshToken.getMembership(), refreshToken.isPersistentLogin(), refreshToken.getExpiresAt());
     }
 
     // 현재 로그인 구성원 정보 조회
@@ -88,7 +90,7 @@ public class AuthService {
     }
 
     // 리프레시 토큰 쿠키 생성
-    public ResponseCookie createRefreshCookie(String rawRefreshToken, boolean persistentLogin) {
+    public ResponseCookie createRefreshCookie(String rawRefreshToken, boolean persistentLogin, Instant sessionExpiresAt) {
         // HttpOnly라 브라우저 JavaScript로 읽을 수 없어 XSS 노출 범위를 줄임.
         ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie
                 .from(REFRESH_TOKEN_COOKIE_NAME, rawRefreshToken)
@@ -98,8 +100,8 @@ public class AuthService {
                 .path("/api/v1/auth");
 
         if (persistentLogin) {
-            // 로그인 유지 선택 시에만 브라우저 재시작 후에도 남는 영속 쿠키를 발급.
-            cookieBuilder.maxAge(appAuthProperties.refreshTokenExpiration());
+            // Rotation 뒤에도 최초 로그인 기준 남은 시간만큼만 영속 쿠키를 유지.
+            cookieBuilder.maxAge(Duration.between(Instant.now(), sessionExpiresAt));
         }
 
         return cookieBuilder.build();
@@ -117,9 +119,13 @@ public class AuthService {
     }
 
     // 토큰 발급
-    private AuthResult issueTokens(Membership membership, boolean persistentLogin) {
+    private AuthResult issueTokens(Membership membership, boolean persistentLogin, Instant sessionExpiresAt) {
         Instant now = Instant.now();
-        Instant accessTokenExpiresAt = now.plus(appAuthProperties.accessTokenExpiration());
+        // Access Token이 Refresh Token의 절대 만료 시각을 넘지 않게 제한.
+        Instant configuredAccessTokenExpiresAt = now.plus(appAuthProperties.accessTokenExpiration());
+        Instant accessTokenExpiresAt = configuredAccessTokenExpiresAt.isAfter(sessionExpiresAt)
+                ? sessionExpiresAt
+                : configuredAccessTokenExpiresAt;
         String accessToken = jwtEncoder.encode(JwtEncoderParameters.from(JwtClaimsSet.builder()
                 .issuer(appAuthProperties.issuer())
                 .subject("membership:" + membership.getId())
@@ -137,15 +143,16 @@ public class AuthService {
                 UUID.randomUUID(),
                 membership,
                 hashToken(rawRefreshToken),
-                now.plus(appAuthProperties.refreshTokenExpiration()),
+                sessionExpiresAt,
                 persistentLogin));
 
         AuthResponse response = new AuthResponse(
                 accessToken,
                 "Bearer",
-                appAuthProperties.accessTokenExpiration().toSeconds(),
+                Duration.between(now, accessTokenExpiresAt).toSeconds(),
+                sessionExpiresAt,
                 toMemberResponse(membership));
-        return new AuthResult(response, rawRefreshToken, persistentLogin);
+        return new AuthResult(response, rawRefreshToken, persistentLogin, sessionExpiresAt);
     }
 
     // 사용 가능한 리프레시 토큰 조회
@@ -196,6 +203,6 @@ public class AuthService {
     }
 
     // Controller에 응답 본문과 HttpOnly 쿠키 값을 함께 전달하는 서비스 내부 결과 객체.
-    public record AuthResult(AuthResponse response, String refreshToken, boolean persistentLogin) {
+    public record AuthResult(AuthResponse response, String refreshToken, boolean persistentLogin, Instant sessionExpiresAt) {
     }
 }

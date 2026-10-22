@@ -98,6 +98,13 @@ Next.js 로그인 UI
 - 검증: API `./mvnw.cmd -q -DskipTests compile` 성공, Front `npm run lint`, `npm run build` 성공.
 - Git Commit/Push: 수행하지 않음.
 
+### 2026-10-22 / 로그인 세션 만료 정책
+- 사용자 결정: Access Token 3시간, Refresh Token 최초 로그인 기준 최대 7일.
+- 결정 사항: Refresh Token은 Rotation하되 최초 세션 만료 시각을 연장하지 않는다. Access Token도 세션 절대 만료 시각을 넘겨 발급하지 않는다.
+- Front 반영: Access Token 만료 1분 전 자동 갱신, 전체 세션 만료 또는 Refresh 실패 시 로그인 화면 이동, 상단바 세션 잔여 시간 표시.
+- 검증: API 컴파일 성공. Front `npm run lint`, `npm run build` 성공. API 전체 테스트는 기존 V14 PostgreSQL 전용 `UPDATE ... FROM` 문이 H2 테스트 DB에서 실패해 실행되지 못함.
+- Git Commit/Push: 수행하지 않음.
+
 ### YYYY-MM-DD / Phase N
 - 사용자 요청:
 - 사용자 승인 여부:

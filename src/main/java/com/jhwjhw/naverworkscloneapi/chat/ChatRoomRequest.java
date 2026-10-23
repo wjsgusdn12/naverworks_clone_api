@@ -20,6 +20,10 @@ public record ChatRoomRequest() {
   public record RenameRequest(@NotBlank @Size(max = 100) String name) {
   }
 
+  // 채팅방별 알림 설정 요청
+  public record NotificationRequest(boolean enabled) {
+  }
+
   // 텍스트 메시지 전송 요청
   public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content) {
   }

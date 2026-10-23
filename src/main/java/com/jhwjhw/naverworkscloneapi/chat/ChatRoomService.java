@@ -48,7 +48,8 @@ public class ChatRoomService {
             if (room.getRoomType() != ChatRoomType.DIRECT || room.getEndedAt() != null) {
                 continue;
             }
-            ChatRoomMember targetMember = memberRepository.findByChatRoomIdAndMembershipId(room.getId(), targetId).orElse(null);
+            ChatRoomMember targetMember = memberRepository.findByChatRoomIdAndMembershipId(room.getId(), targetId)
+                    .orElse(null);
             if (targetMember != null) {
                 candidate.rejoin();
                 targetMember.rejoin();
@@ -59,7 +60,8 @@ public class ChatRoomService {
         ChatRoom room = roomRepository.save(new ChatRoom(requester.getCompany(), ChatRoomType.DIRECT, null, null));
         memberRepository.save(new ChatRoomMember(room, requester));
         memberRepository.save(new ChatRoomMember(room, target));
-        log.info("Direct chat room created. roomId={}, requesterId={}, targetId={}", room.getId(), requesterId, targetId);
+        log.info("Direct chat room created. roomId={}, requesterId={}, targetId={}", room.getId(), requesterId,
+                targetId);
         return room(room, requesterId);
     }
 
@@ -73,7 +75,8 @@ public class ChatRoomService {
                 .findFirst()
                 .map(room -> room(room, requesterId))
                 .orElseGet(() -> {
-                    ChatRoom room = roomRepository.save(new ChatRoom(requester.getCompany(), ChatRoomType.SELF, null, null));
+                    ChatRoom room = roomRepository
+                            .save(new ChatRoom(requester.getCompany(), ChatRoomType.SELF, null, null));
                     memberRepository.save(new ChatRoomMember(room, requester));
                     return room(room, requesterId);
                 });
@@ -88,27 +91,30 @@ public class ChatRoomService {
             throw new ChatException("CHAT_GROUP_MEMBER_MINIMUM", "그룹 채팅방은 생성자를 포함해 3명 이상이어야 합니다.");
         }
 
-        ChatRoom room = roomRepository.save(new ChatRoom(requester.getCompany(), ChatRoomType.GROUP, request.name().trim(), requester));
+        ChatRoom room = roomRepository
+                .save(new ChatRoom(requester.getCompany(), ChatRoomType.GROUP, request.name().trim(), requester));
         for (Long memberId : memberIds) {
             memberRepository.save(new ChatRoomMember(room, activeMembership(memberId)));
         }
         systemMessage(room, requester, requester.getUserAccount().getDisplayName() + "님이 그룹 채팅방을 만들었습니다.");
-        log.info("Group chat room created. roomId={}, ownerId={}, memberCount={}", room.getId(), requesterId, memberIds.size());
+        log.info("Group chat room created. roomId={}, ownerId={}, memberCount={}", room.getId(), requesterId,
+                memberIds.size());
         return room(room, requesterId);
     }
 
     @Transactional(readOnly = true)
     public List<ChatRoomResponse.Room> list(Long requesterId) {
         activeMembership(requesterId);
-        List<ChatRoom> rooms = memberRepository.findByMembershipIdAndLeftAtIsNull(requesterId).stream()
+        List<ChatRoom> rooms = memberRepository.findByMembershipIdAndLeftAtIsNullAndHiddenAtIsNull(requesterId).stream()
                 .map(ChatRoomMember::getChatRoom)
                 .filter(room -> room.getEndedAt() == null)
                 .toList();
         return rooms(rooms, requesterId).stream()
                 // 대화 전 새 방은 생성 시각을 사용해 목록 최상단에 배치.
-                .sorted(Comparator.comparing(
-                        room -> room.lastMessageAt() == null ? room.createdAt() : room.lastMessageAt(),
-                        Comparator.reverseOrder()))
+                .sorted(Comparator.comparing(ChatRoomResponse.Room::pinned).reversed()
+                        .thenComparing(Comparator.comparing(
+                                room -> room.lastMessageAt() == null ? room.createdAt() : room.lastMessageAt(),
+                                Comparator.reverseOrder())))
                 .toList();
     }
 
@@ -117,8 +123,9 @@ public class ChatRoomService {
         active(roomId, requesterId);
         List<ChatRoomMember> activeMembers = memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId);
         return new ChatRoomResponse.Detail(room(roomById(roomId), requesterId), activeMembers.stream()
-                .map(member -> member.getMembership().getId()).toList(), activeMembers.stream()
-                .map(this::memberProfile).toList());
+                .map(member -> member.getMembership().getId()).toList(),
+                activeMembers.stream()
+                        .map(this::memberProfile).toList());
     }
 
     @Transactional
@@ -163,9 +170,25 @@ public class ChatRoomService {
         }
         mine.leave();
         if (room.getRoomType() == ChatRoomType.GROUP) {
-            systemMessage(room, mine.getMembership(), mine.getMembership().getUserAccount().getDisplayName() + "님이 채팅방을 나갔습니다.");
+            systemMessage(room, mine.getMembership(),
+                    mine.getMembership().getUserAccount().getDisplayName() + "님이 채팅방을 나갔습니다.");
         }
         endWhenEmpty(room);
+    }
+
+    @Transactional
+    public void hide(Long requesterId, Long roomId) {
+        active(roomId, requesterId).hide();
+    }
+
+    @Transactional
+    public void togglePin(Long requesterId, Long roomId) {
+        active(roomId, requesterId).togglePin();
+    }
+
+    @Transactional
+    public void updateNotification(Long requesterId, Long roomId, boolean enabled) {
+        active(roomId, requesterId).updateNotification(enabled);
     }
 
     @Transactional
@@ -187,11 +210,13 @@ public class ChatRoomService {
     }
 
     @Transactional
-    public ChatRoomResponse.Message sendMessage(Long requesterId, Long roomId, ChatRoomRequest.MessageCreateRequest request) {
+    public ChatRoomResponse.Message sendMessage(Long requesterId, Long roomId,
+            ChatRoomRequest.MessageCreateRequest request) {
         ChatRoomMember sender = active(roomId, requesterId);
         ChatRoom room = sender.getChatRoom();
         requireOpen(room);
-        ChatMessage message = messageRepository.save(new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT));
+        ChatMessage message = messageRepository
+                .save(new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT));
         sender.markRead(message.getId());
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}", roomId, message.getId(), requesterId);
         return message(message, readSummaries(List.of(message)).get(message.getId()));
@@ -235,7 +260,8 @@ public class ChatRoomService {
         }
         return memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId).stream()
                 .filter(member -> !member.getMembership().getId().equals(message.getSenderMembership().getId()))
-                .filter(member -> (member.getLastReadMessageId() != null && member.getLastReadMessageId() >= messageId) == read)
+                .filter(member -> (member.getLastReadMessageId() != null
+                        && member.getLastReadMessageId() >= messageId) == read)
                 .map(member -> readMember(member, read))
                 .toList();
     }
@@ -314,16 +340,27 @@ public class ChatRoomService {
         long unreadCount = unreadSummary == null ? 0 : unreadSummary.getUnreadCount();
         Instant oldestUnreadMessageAt = unreadSummary == null ? null : unreadSummary.getOldestUnreadMessageAt();
         ChatRoomMember directMember = room.getRoomType() == ChatRoomType.DIRECT
-                ? activeMembers.stream().filter(member -> !member.getMembership().getId().equals(requesterId)).findFirst().orElse(null)
+                ? activeMembers.stream().filter(member -> !member.getMembership().getId().equals(requesterId))
+                        .findFirst().orElse(null)
                 : null;
+        ChatRoomMember requesterMember = activeMembers.stream()
+                .filter(member -> member.getMembership().getId().equals(requesterId)).findFirst().orElse(null);
         return new ChatRoomResponse.Room(room.getId(), room.getRoomType().name(), room.getName(),
                 room.getOwnerMembership() == null ? null : room.getOwnerMembership().getId(),
                 activeMembers.size(), room.getCreatedAt(),
-                lastMessage == null ? null : lastMessage.getContent(), lastMessage == null ? null : lastMessage.getCreatedAt(), lastMessage == null ? null : lastMessage.getSenderMembership().getId(), unreadCount, oldestUnreadMessageAt,
-                directMember == null ? null : directMember.getMembership().getId(), directMember == null ? null : directMember.getMembership().getUserAccount().getDisplayName(),
-                directMember == null || directMember.getMembership().getJobGrade() == null ? null : directMember.getMembership().getJobGrade().getName(),
-                directMember == null || directMember.getMembership().getDepartment() == null ? null : directMember.getMembership().getDepartment().getName(),
-                directMember == null ? null : directMember.getMembership().getCompany().getName());
+                lastMessage == null ? null : lastMessage.getContent(),
+                lastMessage == null ? null : lastMessage.getCreatedAt(),
+                lastMessage == null ? null : lastMessage.getSenderMembership().getId(), unreadCount,
+                oldestUnreadMessageAt,
+                directMember == null ? null : directMember.getMembership().getId(),
+                directMember == null ? null : directMember.getMembership().getUserAccount().getDisplayName(),
+                directMember == null || directMember.getMembership().getJobGrade() == null ? null
+                        : directMember.getMembership().getJobGrade().getName(),
+                directMember == null || directMember.getMembership().getDepartment() == null ? null
+                        : directMember.getMembership().getDepartment().getName(),
+                directMember == null ? null : directMember.getMembership().getCompany().getName(),
+                requesterMember != null && requesterMember.getPinnedAt() != null,
+                requesterMember == null || requesterMember.isNotificationEnabled());
     }
 
     private Map<Long, ChatMessageReadSummary> readSummaries(List<ChatMessage> messages) {
@@ -341,7 +378,8 @@ public class ChatRoomService {
         long readCount = readSummary == null ? 0 : readSummary.getReadCount();
         long unreadCount = Math.max(0, recipientCount - readCount);
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
-                message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(), message.getMessageType().name(),
+                message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
+                message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount);
     }
 
@@ -349,7 +387,8 @@ public class ChatRoomService {
         Membership membership = member.getMembership();
         String jobGrade = membership.getJobGrade() == null ? null : membership.getJobGrade().getName();
         String departmentName = membership.getDepartment() == null ? null : membership.getDepartment().getName();
-        return new ChatRoomResponse.ReadMember(membership.getId(), membership.getUserAccount().getDisplayName(), jobGrade, departmentName, read);
+        return new ChatRoomResponse.ReadMember(membership.getId(), membership.getUserAccount().getDisplayName(),
+                jobGrade, departmentName, read);
     }
 
     private ChatRoomResponse.MemberProfile memberProfile(ChatRoomMember member) {

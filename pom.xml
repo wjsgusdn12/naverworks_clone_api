@@ -78,7 +78,7 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-devtools</artifactId>
-			<scope>runtime</scope>
+			<!-- VS Code Java 디버거가 classpath에 포함해 저장 후 재시작을 감지. -->
 			<optional>true</optional>
 		</dependency>
 		<dependency>

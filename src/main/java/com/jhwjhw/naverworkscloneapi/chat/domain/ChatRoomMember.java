@@ -35,6 +35,16 @@ public class ChatRoomMember {
     @Column(name = "last_read_message_id")
     private Long lastReadMessageId;
 
+    // 사용자별 목록 숨김 시각. 방과 메시지는 삭제하지 않는다.
+    private Instant hiddenAt;
+
+    // 사용자별 상단 고정 시각.
+    private Instant pinnedAt;
+
+    // 사용자별 새 메시지 알림 수신 여부.
+    @Column(nullable = false)
+    private boolean notificationEnabled = true;
+
     protected ChatRoomMember() {
     }
 
@@ -47,6 +57,7 @@ public class ChatRoomMember {
     // 참여 재시작
     public void rejoin() {
         this.leftAt = null;
+        this.hiddenAt = null;
         this.joinedAt = Instant.now();
     }
 
@@ -65,5 +76,17 @@ public class ChatRoomMember {
         if (messageId != null && (lastReadMessageId == null || messageId > lastReadMessageId)) {
             this.lastReadMessageId = messageId;
         }
+    }
+
+    public void hide() {
+        this.hiddenAt = Instant.now();
+    }
+
+    public void togglePin() {
+        this.pinnedAt = pinnedAt == null ? Instant.now() : null;
+    }
+
+    public void updateNotification(boolean enabled) {
+        this.notificationEnabled = enabled;
     }
 }

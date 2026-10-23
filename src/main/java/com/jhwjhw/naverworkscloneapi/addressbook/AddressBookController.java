@@ -22,7 +22,8 @@ public class AddressBookController {
     private final AddressBookService addressBookService;
 
     @GetMapping("/organization")
-    public ApiResponse<java.util.List<AddressBookResponse.OrganizationResponse>> organization(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<java.util.List<AddressBookResponse.OrganizationResponse>> organization(
+            @AuthenticationPrincipal Jwt jwt) {
         return ApiResponse.success("ADDRESS_BOOK_ORGANIZATION_FOUND", "조직 정보를 조회했습니다.",
                 addressBookService.getOrganization(membershipId(jwt)));
     }
@@ -38,17 +39,17 @@ public class AddressBookController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "name") String sort,
             @RequestParam(defaultValue = "asc") String direction,
-            @RequestParam(defaultValue = "false") boolean favoriteOnly
-    ) {
+            @RequestParam(defaultValue = "false") boolean favoriteOnly,
+            @RequestParam(defaultValue = "false") boolean allCompany) {
         return ApiResponse.success("ADDRESS_BOOK_MEMBER_FOUND", "구성원 목록을 조회했습니다.",
-                addressBookService.getMembers(membershipId(jwt), keyword, companyId, departmentId, enabled, page, size, sort, direction, favoriteOnly));
+                addressBookService.getMembers(membershipId(jwt), keyword, companyId, departmentId, enabled, page, size,
+                        sort, direction, favoriteOnly, allCompany));
     }
 
     @GetMapping("/member/detail")
     public ApiResponse<AddressBookResponse.MemberDetailResponse> memberDetail(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestParam Long membershipId
-    ) {
+            @RequestParam Long membershipId) {
         return ApiResponse.success("ADDRESS_BOOK_MEMBER_DETAIL_FOUND", "구성원 상세 정보를 조회했습니다.",
                 addressBookService.getMemberDetail(membershipId(jwt), membershipId));
     }
@@ -58,14 +59,14 @@ public class AddressBookController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size
-    ) {
+            @RequestParam(defaultValue = "50") int size) {
         return ApiResponse.success("ADDRESS_BOOK_MEMBER_SUGGEST_FOUND", "구성원 검색 미리보기를 조회했습니다.",
                 addressBookService.getMemberSuggestions(membershipId(jwt), keyword, page, size));
     }
 
     @GetMapping("/searchHistory")
-    public ApiResponse<java.util.List<AddressBookResponse.SearchHistoryResponse>> searchHistory(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<java.util.List<AddressBookResponse.SearchHistoryResponse>> searchHistory(
+            @AuthenticationPrincipal Jwt jwt) {
         return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_FOUND", "최근 검색어를 조회했습니다.",
                 addressBookService.getSearchHistory(membershipId(jwt)));
     }
@@ -73,8 +74,7 @@ public class AddressBookController {
     @PostMapping("/searchHistory/create")
     public ApiResponse<Void> createSearchHistory(
             @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody AddressBookRequest.SearchHistoryCreateRequest request
-    ) {
+            @Valid @RequestBody AddressBookRequest.SearchHistoryCreateRequest request) {
         addressBookService.createSearchHistory(membershipId(jwt), request.keyword());
         return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_CREATED", "최근 검색어를 저장했습니다.", null);
     }
@@ -88,26 +88,28 @@ public class AddressBookController {
     @PostMapping("/searchHistory/delete/{searchHistoryId}")
     public ApiResponse<Void> deleteSearchHistoryItem(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable Long searchHistoryId
-    ) {
+            @PathVariable Long searchHistoryId) {
         addressBookService.deleteSearchHistoryItem(membershipId(jwt), searchHistoryId);
         return ApiResponse.success("ADDRESS_BOOK_SEARCH_HISTORY_ITEM_DELETED", "최근 검색어를 삭제했습니다.", null);
     }
 
     @PostMapping("/favorite/create")
-    public ApiResponse<Void> createFavorite(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AddressBookRequest.FavoriteRequest request) {
+    public ApiResponse<Void> createFavorite(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddressBookRequest.FavoriteRequest request) {
         addressBookService.createFavorite(membershipId(jwt), request.targetMembershipId());
         return ApiResponse.success("ADDRESS_BOOK_FAVORITE_CREATED", "즐겨찾기에 추가했습니다.", null);
     }
 
     @PostMapping("/favorite/delete")
-    public ApiResponse<Void> deleteFavorite(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AddressBookRequest.FavoriteRequest request) {
+    public ApiResponse<Void> deleteFavorite(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddressBookRequest.FavoriteRequest request) {
         addressBookService.deleteFavorite(membershipId(jwt), request.targetMembershipId());
         return ApiResponse.success("ADDRESS_BOOK_FAVORITE_DELETED", "즐겨찾기에서 해제했습니다.", null);
     }
 
     @PostMapping("/presence/update")
-    public ApiResponse<Void> updatePresence(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AddressBookRequest.PresenceRequest request) {
+    public ApiResponse<Void> updatePresence(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddressBookRequest.PresenceRequest request) {
         addressBookService.updatePresence(membershipId(jwt), request);
         return ApiResponse.success("ADDRESS_BOOK_PRESENCE_UPDATED", "상태를 변경했습니다.", null);
     }
@@ -115,17 +117,17 @@ public class AddressBookController {
     @GetMapping("/group")
     public ApiResponse<java.util.List<AddressBookResponse.ContactGroupResponse>> group(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(defaultValue = "all") String tab
-    ) {
-        return ApiResponse.success("ADDRESS_BOOK_GROUP_FOUND", "주소록 그룹을 조회했습니다.", addressBookService.getContactGroups(membershipId(jwt), tab));
+            @RequestParam(defaultValue = "all") String tab) {
+        return ApiResponse.success("ADDRESS_BOOK_GROUP_FOUND", "주소록 그룹을 조회했습니다.",
+                addressBookService.getContactGroups(membershipId(jwt), tab));
     }
 
     @PostMapping("/group/create")
     public ApiResponse<AddressBookResponse.ContactGroupResponse> createGroup(
             @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody AddressBookRequest.ContactGroupCreateRequest request
-    ) {
-        return ApiResponse.success("ADDRESS_BOOK_GROUP_CREATED", "주소록 그룹을 생성했습니다.", addressBookService.createContactGroup(membershipId(jwt), request));
+            @Valid @RequestBody AddressBookRequest.ContactGroupCreateRequest request) {
+        return ApiResponse.success("ADDRESS_BOOK_GROUP_CREATED", "주소록 그룹을 생성했습니다.",
+                addressBookService.createContactGroup(membershipId(jwt), request));
     }
 
     private Long membershipId(Jwt jwt) {

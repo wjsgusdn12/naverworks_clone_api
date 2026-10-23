@@ -90,6 +90,25 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_ROOM_LEFT", "채팅방에서 나갔습니다.", null);
   }
 
+  @PostMapping("/hide")
+  public ApiResponse<Void> hide(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
+    service.hide(id(jwt), chatRoomId);
+    return ApiResponse.success("CHAT_ROOM_HIDDEN", "채팅방을 숨겼습니다.", null);
+  }
+
+  @PostMapping("/pin/update")
+  public ApiResponse<Void> pin(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
+    service.togglePin(id(jwt), chatRoomId);
+    return ApiResponse.success("CHAT_ROOM_PIN_UPDATED", "채팅방 고정 상태를 변경했습니다.", null);
+  }
+
+  @PostMapping("/notification/update")
+  public ApiResponse<Void> notification(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId,
+      @Valid @RequestBody ChatRoomRequest.NotificationRequest r) {
+    service.updateNotification(id(jwt), chatRoomId, r.enabled());
+    return ApiResponse.success("CHAT_ROOM_NOTIFICATION_UPDATED", "알림 설정을 변경했습니다.", null);
+  }
+
   // 텍스트 메시지 전송
   @PostMapping("/message/create")
   public ApiResponse<ChatRoomResponse.Message> message(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId,
@@ -99,7 +118,8 @@ public class ChatRoomController {
 
   // 최신 50개 또는 커서 이전의 메시지 조회. 조회 후 현재 위치를 읽음으로 갱신.
   @GetMapping("/message")
-  public ApiResponse<ChatRoomResponse.MessagePage> messages(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId,
+  public ApiResponse<ChatRoomResponse.MessagePage> messages(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId,
       @RequestParam(required = false) Long cursor) {
     return ApiResponse.success("CHAT_MESSAGE_FOUND", "메시지를 조회했습니다.", service.messages(id(jwt), chatRoomId, cursor));
   }

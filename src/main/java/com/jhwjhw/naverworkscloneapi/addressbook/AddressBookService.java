@@ -64,9 +64,9 @@ public class AddressBookService {
                         company.getName(),
                         company.getId().equals(requester.getCompany().getId()),
                         departmentRepository.findByCompanyIdOrderByNameAsc(company.getId()).stream()
-                                .map(department -> new DepartmentResponse(department.getId(), department.getName(), department.isEnabled()))
-                                .toList()
-                ))
+                                .map(department -> new DepartmentResponse(department.getId(), department.getName(),
+                                        department.isEnabled()))
+                                .toList()))
                 .toList();
     }
 
@@ -81,22 +81,27 @@ public class AddressBookService {
             int size,
             String sort,
             String direction,
-            boolean favoriteOnly
-    ) {
+            boolean favoriteOnly,
+            boolean allCompany) {
         Membership requester = findMembership(requesterMembershipId);
         int normalizedPage = Math.max(page, 0);
         int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         PageRequest pageable = PageRequest.of(normalizedPage, normalizedSize, toSort(sort, direction));
 
-        Long targetCompanyId = companyId == null ? requester.getCompany().getId() : companyId;
+        Long targetCompanyId = companyId;
         if (companyId != null && !companyRepository.existsById(targetCompanyId)) {
             throw new AddressBookException("ADDRESS_BOOK_COMPANY_NOT_FOUND", "회사를 찾을 수 없습니다.");
         }
 
-        // 즐겨찾기는 회사와 무관한 개인 목록이므로 회사 기본 필터를 적용하지 않음.
-        Specification<Membership> specification = Specification.where(favoriteOnly && companyId == null
-                        ? Specification.unrestricted()
-                        : companyEquals(targetCompanyId))
+        // 메시지 후보처럼 전체 회사 조회가 필요한 화면만 allCompany=true를 사용.
+        boolean applyCompanyFilter = companyId != null || (!favoriteOnly && !allCompany);
+        if (applyCompanyFilter && targetCompanyId == null) {
+            targetCompanyId = requester.getCompany().getId();
+        }
+
+        Specification<Membership> specification = Specification.where(applyCompanyFilter
+                ? companyEquals(targetCompanyId)
+                : Specification.unrestricted())
                 .and(keywordContains(keyword))
                 .and(departmentEquals(departmentId))
                 .and(accountEnabledEquals(enabled));
@@ -115,7 +120,8 @@ public class AddressBookService {
                 .map(member -> toMemberResponse(member, requesterMembershipId, favoriteIds.contains(member.getId())))
                 .toList();
 
-        return new MemberPageResponse(content, memberPage.getNumber(), memberPage.getSize(), memberPage.getTotalElements(), memberPage.getTotalPages());
+        return new MemberPageResponse(content, memberPage.getNumber(), memberPage.getSize(),
+                memberPage.getTotalElements(), memberPage.getTotalPages());
     }
 
     @Transactional(readOnly = true)
@@ -135,15 +141,17 @@ public class AddressBookService {
                 Math.min(Math.max(size, 1), SUGGESTION_PAGE_SIZE),
                 "name",
                 "asc",
-                false
-        );
+                false,
+                false);
     }
 
     @Transactional(readOnly = true)
     public List<AddressBookResponse.SearchHistoryResponse> getSearchHistory(Long requesterMembershipId) {
-        return addressBookSearchHistoryRepository.findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId).stream()
+        return addressBookSearchHistoryRepository.findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId)
+                .stream()
                 .limit(MAX_SEARCH_HISTORY_SIZE)
-                .map(history -> new AddressBookResponse.SearchHistoryResponse(history.getId(), history.getKeyword(), history.getUpdatedAt()))
+                .map(history -> new AddressBookResponse.SearchHistoryResponse(history.getId(), history.getKeyword(),
+                        history.getUpdatedAt()))
                 .toList();
     }
 
@@ -157,7 +165,8 @@ public class AddressBookService {
         history.touch();
         addressBookSearchHistoryRepository.save(history);
 
-        List<AddressBookSearchHistory> histories = addressBookSearchHistoryRepository.findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId);
+        List<AddressBookSearchHistory> histories = addressBookSearchHistoryRepository
+                .findByOwnerMembershipIdOrderByUpdatedAtDesc(requesterMembershipId);
         if (histories.size() > MAX_SEARCH_HISTORY_SIZE) {
             addressBookSearchHistoryRepository.deleteAll(histories.subList(MAX_SEARCH_HISTORY_SIZE, histories.size()));
         }
@@ -173,7 +182,8 @@ public class AddressBookService {
         // 본인 검색어만 삭제해 다른 사용자의 최근 검색어를 보호.
         AddressBookSearchHistory history = addressBookSearchHistoryRepository
                 .findByIdAndOwnerMembershipId(searchHistoryId, requesterMembershipId)
-                .orElseThrow(() -> new AddressBookException("ADDRESS_BOOK_SEARCH_HISTORY_NOT_FOUND", "최근 검색어를 찾을 수 없습니다."));
+                .orElseThrow(
+                        () -> new AddressBookException("ADDRESS_BOOK_SEARCH_HISTORY_NOT_FOUND", "최근 검색어를 찾을 수 없습니다."));
         addressBookSearchHistoryRepository.delete(history);
     }
 
@@ -182,7 +192,8 @@ public class AddressBookService {
         findMembership(requesterMembershipId);
         // 조직도 전체 조회에서는 다른 회사 프로필도 읽기 전용으로 확인 가능.
         Membership target = findMembership(targetMembershipId);
-        boolean favorite = memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent();
+        boolean favorite = memberFavoriteRepository
+                .findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent();
         return toMemberDetailResponse(target, requesterMembershipId, favorite);
     }
 
@@ -191,20 +202,24 @@ public class AddressBookService {
         Membership requester = findMembership(requesterMembershipId);
         // 주소록 전체 조직도에서 선택한 다른 회사 구성원도 개인 즐겨찾기에 추가 가능.
         Membership target = findMembership(targetMembershipId);
-        if (memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent()) {
+        if (memberFavoriteRepository
+                .findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId).isPresent()) {
             return;
         }
 
         memberFavoriteRepository.save(new MemberFavorite(requester, target));
-        log.info("Address book favorite created. ownerMembershipId={}, targetMembershipId={}", requesterMembershipId, targetMembershipId);
+        log.info("Address book favorite created. ownerMembershipId={}, targetMembershipId={}", requesterMembershipId,
+                targetMembershipId);
     }
 
     @Transactional
     public void deleteFavorite(Long requesterMembershipId, Long targetMembershipId) {
-        MemberFavorite favorite = memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId)
+        MemberFavorite favorite = memberFavoriteRepository
+                .findByOwnerMembershipIdAndTargetMembershipId(requesterMembershipId, targetMembershipId)
                 .orElseThrow(() -> new AddressBookException("ADDRESS_BOOK_FAVORITE_NOT_FOUND", "즐겨찾기 정보를 찾을 수 없습니다."));
         memberFavoriteRepository.delete(favorite);
-        log.info("Address book favorite deleted. ownerMembershipId={}, targetMembershipId={}", requesterMembershipId, targetMembershipId);
+        log.info("Address book favorite deleted. ownerMembershipId={}, targetMembershipId={}", requesterMembershipId,
+                targetMembershipId);
     }
 
     @Transactional
@@ -221,7 +236,8 @@ public class AddressBookService {
         }
 
         requester.setAwayUntil(Instant.now().plus(Duration.ofHours(awayHours)));
-        log.info("Address book presence updated. membershipId={}, status=AWAY, awayHours={}", requesterMembershipId, awayHours);
+        log.info("Address book presence updated. membershipId={}, status=AWAY, awayHours={}", requesterMembershipId,
+                awayHours);
     }
 
     @Transactional(readOnly = true)
@@ -234,16 +250,19 @@ public class AddressBookService {
     }
 
     @Transactional
-    public AddressBookResponse.ContactGroupResponse createContactGroup(Long requesterMembershipId, AddressBookRequest.ContactGroupCreateRequest request) {
+    public AddressBookResponse.ContactGroupResponse createContactGroup(Long requesterMembershipId,
+            AddressBookRequest.ContactGroupCreateRequest request) {
         Membership requester = findMembership(requesterMembershipId);
-        ContactGroup group = contactGroupRepository.save(new ContactGroup(requester.getCompany(), request.name().trim(), requester));
+        ContactGroup group = contactGroupRepository
+                .save(new ContactGroup(requester.getCompany(), request.name().trim(), requester));
         Set<Long> memberIds = new HashSet<>(request.membershipIds());
         memberIds.add(requesterMembershipId);
         for (Long membershipId : memberIds) {
             Membership target = findMembershipInCompany(membershipId, requester.getCompany().getId());
             contactGroupMemberRepository.save(new ContactGroupMember(group, target));
         }
-        log.info("Address book group created. groupId={}, masterMembershipId={}, memberCount={}", group.getId(), requesterMembershipId, memberIds.size());
+        log.info("Address book group created. groupId={}, masterMembershipId={}, memberCount={}", group.getId(),
+                requesterMembershipId, memberIds.size());
         return toContactGroupResponse(group, requesterMembershipId);
     }
 
@@ -272,9 +291,8 @@ public class AddressBookService {
             return Set.of();
         }
         return memberFavoriteRepository.findByOwnerMembershipIdAndTargetMembershipIdIn(
-                        requesterMembershipId,
-                        members.stream().map(Membership::getId).toList()
-                ).stream()
+                requesterMembershipId,
+                members.stream().map(Membership::getId).toList()).stream()
                 .map(favorite -> favorite.getTargetMembership().getId())
                 .collect(java.util.stream.Collectors.toSet());
     }
@@ -291,18 +309,18 @@ public class AddressBookService {
                 member.getPhoneNumber(),
                 member.getUserAccount().isEnabled(),
                 resolvePresenceStatus(member, requesterMembershipId),
-                favorite
-        );
+                favorite);
     }
 
-    private MemberDetailResponse toMemberDetailResponse(Membership member, Long requesterMembershipId, boolean favorite) {
+    private MemberDetailResponse toMemberDetailResponse(Membership member, Long requesterMembershipId,
+            boolean favorite) {
         return new MemberDetailResponse(
                 member.getId(), member.getUserAccount().getDisplayName(), member.getJobTitle(),
                 member.getJobGrade() == null ? null : member.getJobGrade().getName(),
                 member.getDepartment() == null ? null : member.getDepartment().getName(), member.getCompany().getName(),
                 member.getUserAccount().getEmail(), member.getPhoneNumber(), member.getHiredAt(),
-                member.getUserAccount().isEnabled(), resolvePresenceStatus(member, requesterMembershipId), member.getAwayUntil(), favorite
-        );
+                member.getUserAccount().isEnabled(), resolvePresenceStatus(member, requesterMembershipId),
+                member.getAwayUntil(), favorite);
     }
 
     private MemberPresenceStatus resolvePresenceStatus(Membership member, Long requesterMembershipId) {
@@ -313,24 +331,27 @@ public class AddressBookService {
             return MemberPresenceStatus.AWAY;
         }
         // Redis Presence 도입 전에는 현재 로그인한 본인만 온라인으로 표시.
-        return member.getId().equals(requesterMembershipId) ? MemberPresenceStatus.ONLINE : MemberPresenceStatus.OFFLINE;
+        return member.getId().equals(requesterMembershipId) ? MemberPresenceStatus.ONLINE
+                : MemberPresenceStatus.OFFLINE;
     }
 
     private boolean shouldIncludeGroup(ContactGroup group, Long requesterMembershipId, String tab) {
         return switch (tab == null ? "all" : tab) {
-            case "member" -> contactGroupMemberRepository.existsByContactGroupIdAndMembershipId(group.getId(), requesterMembershipId);
+            case "member" -> contactGroupMemberRepository.existsByContactGroupIdAndMembershipId(group.getId(),
+                    requesterMembershipId);
             case "master" -> group.getMasterMembership().getId().equals(requesterMembershipId);
             default -> true;
         };
     }
 
-    private AddressBookResponse.ContactGroupResponse toContactGroupResponse(ContactGroup group, Long requesterMembershipId) {
+    private AddressBookResponse.ContactGroupResponse toContactGroupResponse(ContactGroup group,
+            Long requesterMembershipId) {
         return new AddressBookResponse.ContactGroupResponse(
                 group.getId(), group.getName(), contactGroupMemberRepository.countByContactGroupId(group.getId()),
                 group.getMasterMembership().getUserAccount().getDisplayName(),
-                contactGroupMemberRepository.existsByContactGroupIdAndMembershipId(group.getId(), requesterMembershipId),
-                group.getMasterMembership().getId().equals(requesterMembershipId), group.getCreatedAt()
-        );
+                contactGroupMemberRepository.existsByContactGroupIdAndMembershipId(group.getId(),
+                        requesterMembershipId),
+                group.getMasterMembership().getId().equals(requesterMembershipId), group.getCreatedAt());
     }
 
     private Sort toSort(String sort, String direction) {
@@ -358,20 +379,20 @@ public class AddressBookService {
         String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
         String phonePattern = "%" + normalizePhoneKeyword(keyword) + "%";
         return (root, query, criteriaBuilder) -> criteriaBuilder.or(
-                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("displayName")), pattern),
-                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("email")), pattern),
+                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("displayName")),
+                        pattern),
+                criteriaBuilder.like(criteriaBuilder.lower(root.join("userAccount", JoinType.INNER).get("email")),
+                        pattern),
                 // 연락처는 하이픈·공백을 제거해 01012345678과 010-1234-5678을 동일하게 검색.
                 criteriaBuilder.like(
                         criteriaBuilder.function(
                                 "replace",
                                 String.class,
-                                criteriaBuilder.function("replace", String.class, root.get("phoneNumber"), criteriaBuilder.literal("-"), criteriaBuilder.literal("")),
+                                criteriaBuilder.function("replace", String.class, root.get("phoneNumber"),
+                                        criteriaBuilder.literal("-"), criteriaBuilder.literal("")),
                                 criteriaBuilder.literal(" "),
-                                criteriaBuilder.literal("")
-                        ),
-                        phonePattern
-                )
-        );
+                                criteriaBuilder.literal("")),
+                        phonePattern));
     }
 
     private String normalizePhoneKeyword(String keyword) {
@@ -381,12 +402,14 @@ public class AddressBookService {
     private Specification<Membership> departmentEquals(Long departmentId) {
         return departmentId == null
                 ? Specification.unrestricted()
-                : (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("department").get("id"), departmentId);
+                : (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("department").get("id"),
+                        departmentId);
     }
 
     private Specification<Membership> accountEnabledEquals(Boolean enabled) {
         return enabled == null
                 ? Specification.unrestricted()
-                : (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.join("userAccount").get("enabled"), enabled);
+                : (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.join("userAccount").get("enabled"),
+                        enabled);
     }
 }

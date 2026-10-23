@@ -6,8 +6,10 @@ import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoom;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomMemberRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomUnreadSummary;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import java.time.Instant;
@@ -15,7 +17,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -95,10 +100,11 @@ public class ChatRoomService {
     @Transactional(readOnly = true)
     public List<ChatRoomResponse.Room> list(Long requesterId) {
         activeMembership(requesterId);
-        return memberRepository.findByMembershipIdAndLeftAtIsNull(requesterId).stream()
+        List<ChatRoom> rooms = memberRepository.findByMembershipIdAndLeftAtIsNull(requesterId).stream()
                 .map(ChatRoomMember::getChatRoom)
                 .filter(room -> room.getEndedAt() == null)
-                .map(room -> room(room, requesterId))
+                .toList();
+        return rooms(rooms, requesterId).stream()
                 // 대화 전 새 방은 생성 시각을 사용해 목록 최상단에 배치.
                 .sorted(Comparator.comparing(
                         room -> room.lastMessageAt() == null ? room.createdAt() : room.lastMessageAt(),
@@ -188,21 +194,24 @@ public class ChatRoomService {
         ChatMessage message = messageRepository.save(new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT));
         sender.markRead(message.getId());
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}", roomId, message.getId(), requesterId);
-        return message(message, requesterId);
+        return message(message, readSummaries(List.of(message)).get(message.getId()));
     }
 
     @Transactional
     public ChatRoomResponse.MessagePage messages(Long requesterId, Long roomId, Long cursor) {
         active(roomId, requesterId);
+        // 목록 응답의 읽음 수가 모달 조회 결과와 같도록 먼저 읽음 위치를 갱신.
+        markRead(requesterId, roomId);
         List<ChatMessage> descending = cursor == null
                 ? messageRepository.findTop50ByChatRoomIdOrderByIdDesc(roomId)
                 : messageRepository.findTop50ByChatRoomIdAndIdLessThanOrderByIdDesc(roomId, cursor);
         Long nextCursor = descending.size() == 50 ? descending.get(descending.size() - 1).getId() : null;
         List<ChatRoomResponse.Message> result = new ArrayList<>();
+        Map<Long, ChatMessageReadSummary> readSummaries = readSummaries(descending);
         for (int index = descending.size() - 1; index >= 0; index--) {
-            result.add(message(descending.get(index), requesterId));
+            ChatMessage message = descending.get(index);
+            result.add(message(message, readSummaries.get(message.getId())));
         }
-        markRead(requesterId, roomId);
         return new ChatRoomResponse.MessagePage(result, nextCursor);
     }
 
@@ -280,31 +289,57 @@ public class ChatRoomService {
     }
 
     private ChatRoomResponse.Room room(ChatRoom room, Long requesterId) {
-        List<ChatMessage> latest = messageRepository.findTop50ByChatRoomIdOrderByIdDesc(room.getId());
-        ChatMessage lastMessage = latest.isEmpty() ? null : latest.getFirst();
-        ChatRoomMember requester = memberRepository.findByChatRoomIdAndMembershipId(room.getId(), requesterId).orElseThrow();
-        long unreadCount = messageRepository.countUnread(room.getId(), requesterId, requester.getLastReadMessageId(), ChatMessageType.TEXT);
+        return rooms(List.of(room), requesterId).getFirst();
+    }
+
+    // 목록에 필요한 마지막 메시지·참가자·읽음 정보를 방 단위가 아닌 묶음으로 조회.
+    private List<ChatRoomResponse.Room> rooms(List<ChatRoom> rooms, Long requesterId) {
+        if (rooms.isEmpty()) {
+            return List.of();
+        }
+        List<Long> roomIds = rooms.stream().map(ChatRoom::getId).toList();
+        Map<Long, ChatMessage> lastMessages = messageRepository.findLatestByChatRoomIdIn(roomIds).stream()
+                .collect(Collectors.toMap(message -> message.getChatRoom().getId(), Function.identity()));
+        Map<Long, List<ChatRoomMember>> activeMembers = memberRepository.findActiveByChatRoomIdIn(roomIds).stream()
+                .collect(Collectors.groupingBy(member -> member.getChatRoom().getId()));
+        Map<Long, ChatRoomUnreadSummary> unreadSummaries = messageRepository
+                .findUnreadSummaryByChatRoomIds(roomIds, requesterId, ChatMessageType.TEXT).stream()
+                .collect(Collectors.toMap(ChatRoomUnreadSummary::getRoomId, Function.identity()));
+        return rooms.stream().map(room -> room(room, requesterId, lastMessages.get(room.getId()),
+                activeMembers.getOrDefault(room.getId(), List.of()), unreadSummaries.get(room.getId()))).toList();
+    }
+
+    private ChatRoomResponse.Room room(ChatRoom room, Long requesterId, ChatMessage lastMessage,
+            List<ChatRoomMember> activeMembers, ChatRoomUnreadSummary unreadSummary) {
+        long unreadCount = unreadSummary == null ? 0 : unreadSummary.getUnreadCount();
+        Instant oldestUnreadMessageAt = unreadSummary == null ? null : unreadSummary.getOldestUnreadMessageAt();
         ChatRoomMember directMember = room.getRoomType() == ChatRoomType.DIRECT
-                ? memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId()).stream().filter(member -> !member.getMembership().getId().equals(requesterId)).findFirst().orElse(null)
+                ? activeMembers.stream().filter(member -> !member.getMembership().getId().equals(requesterId)).findFirst().orElse(null)
                 : null;
         return new ChatRoomResponse.Room(room.getId(), room.getRoomType().name(), room.getName(),
                 room.getOwnerMembership() == null ? null : room.getOwnerMembership().getId(),
-                memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId()).size(), room.getCreatedAt(),
-                lastMessage == null ? null : lastMessage.getContent(), lastMessage == null ? null : lastMessage.getCreatedAt(), lastMessage == null ? null : lastMessage.getSenderMembership().getId(), unreadCount,
+                activeMembers.size(), room.getCreatedAt(),
+                lastMessage == null ? null : lastMessage.getContent(), lastMessage == null ? null : lastMessage.getCreatedAt(), lastMessage == null ? null : lastMessage.getSenderMembership().getId(), unreadCount, oldestUnreadMessageAt,
                 directMember == null ? null : directMember.getMembership().getId(), directMember == null ? null : directMember.getMembership().getUserAccount().getDisplayName(),
                 directMember == null || directMember.getMembership().getJobGrade() == null ? null : directMember.getMembership().getJobGrade().getName(),
                 directMember == null || directMember.getMembership().getDepartment() == null ? null : directMember.getMembership().getDepartment().getName(),
                 directMember == null ? null : directMember.getMembership().getCompany().getName());
     }
 
-    private ChatRoomResponse.Message message(ChatMessage message, Long requesterId) {
-        long unreadCount = message.getMessageType() == ChatMessageType.TEXT
-                ? memberRepository.countUnreadMembers(message.getChatRoom().getId(), message.getSenderMembership().getId(), message.getId())
-                : 0;
-        // unreadCount는 아직 읽지 않은 사람 수이므로, 화면용 읽음 수를 별도로 계산.
-        long readCount = message.getMessageType() == ChatMessageType.TEXT
-                ? Math.max(0, memberRepository.countReadableMembers(message.getChatRoom().getId(), message.getSenderMembership().getId()) - unreadCount)
-                : 0;
+    private Map<Long, ChatMessageReadSummary> readSummaries(List<ChatMessage> messages) {
+        List<Long> messageIds = messages.stream().filter(message -> message.getMessageType() == ChatMessageType.TEXT)
+                .map(ChatMessage::getId).toList();
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        return messageRepository.findReadSummaryByMessageIds(messageIds, ChatMessageType.TEXT).stream()
+                .collect(Collectors.toMap(ChatMessageReadSummary::getMessageId, Function.identity()));
+    }
+
+    private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary) {
+        long recipientCount = readSummary == null ? 0 : readSummary.getRecipientCount();
+        long readCount = readSummary == null ? 0 : readSummary.getReadCount();
+        long unreadCount = Math.max(0, recipientCount - readCount);
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(), message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount);

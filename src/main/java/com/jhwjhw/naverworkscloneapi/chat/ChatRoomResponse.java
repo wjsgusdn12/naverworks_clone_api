@@ -6,7 +6,8 @@ import java.util.List;
 public record ChatRoomResponse() {
   // 채팅방 목록 응답
   public record Room(Long id, String type, String name, Long ownerMembershipId, int memberCount, Instant createdAt,
-      String lastMessage, Instant lastMessageAt, Long lastSenderMembershipId, long unreadCount, Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName, String directCompanyName) {
+      String lastMessage, Instant lastMessageAt, Long lastSenderMembershipId, long unreadCount, Instant oldestUnreadMessageAt,
+      Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName, String directCompanyName) {
   }
 
   // 채팅방 상세 응답

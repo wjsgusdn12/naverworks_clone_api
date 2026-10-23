@@ -2,6 +2,7 @@ package com.jhwjhw.naverworkscloneapi.chat.repository;
 
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import java.util.*;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,7 +12,13 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
     Optional<ChatRoomMember> findByChatRoomIdAndMembershipId(Long chatRoomId, Long membershipId);
 
     // 구성원 채팅방 목록 조회
+    @EntityGraph(attributePaths = {"chatRoom", "chatRoom.ownerMembership", "membership", "membership.userAccount"})
     List<ChatRoomMember> findByMembershipIdAndLeftAtIsNull(Long membershipId);
+
+    // 여러 방의 활성 구성원을 한 번에 가져와 목록 응답의 N+1 조회를 방지.
+    @EntityGraph(attributePaths = {"membership", "membership.userAccount", "membership.jobGrade", "membership.department", "membership.company"})
+    @Query("select member from ChatRoomMember member where member.chatRoom.id in :roomIds and member.leftAt is null")
+    List<ChatRoomMember> findActiveByChatRoomIdIn(@Param("roomIds") List<Long> roomIds);
 
     // 나간 방을 다시 열 때 기존 1:1 방을 찾기 위해 모든 참여 이력을 조회.
     List<ChatRoomMember> findByMembershipId(Long membershipId);

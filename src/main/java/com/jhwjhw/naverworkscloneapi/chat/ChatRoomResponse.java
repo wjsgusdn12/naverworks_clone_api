@@ -10,7 +10,7 @@ public record ChatRoomResponse() {
             Instant oldestUnreadMessageAt,
             Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName,
             String directCompanyName,
-            boolean pinned, boolean notificationEnabled) {
+            boolean pinned, Instant pinnedAt, boolean notificationEnabled) {
     }
 
     // 채팅방 상세 응답

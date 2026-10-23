@@ -112,6 +112,7 @@ public class ChatRoomService {
         return rooms(rooms, requesterId).stream()
                 // 대화 전 새 방은 생성 시각을 사용해 목록 최상단에 배치.
                 .sorted(Comparator.comparing(ChatRoomResponse.Room::pinned).reversed()
+                        .thenComparing(ChatRoomResponse.Room::pinnedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Comparator.comparing(
                                 room -> room.lastMessageAt() == null ? room.createdAt() : room.lastMessageAt(),
                                 Comparator.reverseOrder())))
@@ -360,6 +361,7 @@ public class ChatRoomService {
                         : directMember.getMembership().getDepartment().getName(),
                 directMember == null ? null : directMember.getMembership().getCompany().getName(),
                 requesterMember != null && requesterMember.getPinnedAt() != null,
+                requesterMember == null ? null : requesterMember.getPinnedAt(),
                 requesterMember == null || requesterMember.isNotificationEnabled());
     }
 

@@ -31,7 +31,13 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
         List<ChatRoomMember> findByMembershipId(Long membershipId);
 
         // 채팅방 구성원 목록 조회
-        List<ChatRoomMember> findByChatRoomIdAndLeftAtIsNull(Long chatRoomId);
+    List<ChatRoomMember> findByChatRoomIdAndLeftAtIsNull(Long chatRoomId);
+
+    // STOMP 구독 전에 현재 사용자가 활성 참여자인지 한 번의 exists 쿼리로 검증.
+    @Query("select case when count(member) > 0 then true else false end from ChatRoomMember member "
+            + "where member.chatRoom.id = :roomId and member.membership.id = :membershipId "
+            + "and member.leftAt is null and member.chatRoom.endedAt is null")
+    boolean existsActiveMember(@Param("roomId") Long roomId, @Param("membershipId") Long membershipId);
 
         // 특정 메시지를 아직 읽지 않은 활성 구성원 수. 보낸 사람은 제외.
         @Query("select count(member) from ChatRoomMember member where member.chatRoom.id = :roomId "

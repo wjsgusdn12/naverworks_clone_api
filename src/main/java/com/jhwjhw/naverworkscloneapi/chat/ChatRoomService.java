@@ -23,6 +23,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ public class ChatRoomService {
     private final ChatRoomMemberRepository memberRepository;
     private final ChatMessageRepository messageRepository;
     private final MembershipRepository membershipRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ChatRoomResponse.Room createDirect(Long requesterId, Long targetId) {
@@ -220,7 +222,10 @@ public class ChatRoomService {
                 .save(new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT));
         sender.markRead(message.getId());
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}", roomId, message.getId(), requesterId);
-        return message(message, readSummaries(List.of(message)).get(message.getId()));
+        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
+        // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
+        eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
+        return response;
     }
 
     @Transactional

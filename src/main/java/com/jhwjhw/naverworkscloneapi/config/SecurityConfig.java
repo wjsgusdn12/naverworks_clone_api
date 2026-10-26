@@ -54,6 +54,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         // 로그인 전에도 접근해야 하는 화면과 인증 시작 API.
                         .requestMatchers("/", "/error").permitAll()
+                        // WebSocket 연결 인증은 STOMP CONNECT 단계에서 JWT로 검증.
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout")
                         .permitAll()

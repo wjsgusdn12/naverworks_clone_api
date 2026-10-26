@@ -72,10 +72,12 @@ public class ChatRoomMember {
     }
 
     // 현재 방에서 확인한 가장 최신 메시지 위치를 저장.
-    public void markRead(Long messageId) {
+    public boolean markRead(Long messageId) {
         if (messageId != null && (lastReadMessageId == null || messageId > lastReadMessageId)) {
             this.lastReadMessageId = messageId;
+            return true;
         }
+        return false;
     }
 
     public void hide() {

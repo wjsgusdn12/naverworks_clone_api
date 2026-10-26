@@ -250,8 +250,9 @@ public class ChatRoomService {
     public void markRead(Long requesterId, Long roomId) {
         ChatRoomMember member = active(roomId, requesterId);
         List<ChatMessage> latest = messageRepository.findTop50ByChatRoomIdOrderByIdDesc(roomId);
-        if (!latest.isEmpty()) {
-            member.markRead(latest.getFirst().getId());
+        if (!latest.isEmpty() && member.markRead(latest.getFirst().getId())) {
+            // 실제 읽음 위치가 전진한 경우에만 실시간 이벤트를 발행.
+            eventPublisher.publishEvent(new ChatMessageReadUpdatedEvent(roomId, requesterId, latest.getFirst().getId()));
         }
     }
 

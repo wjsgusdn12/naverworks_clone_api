@@ -3,6 +3,7 @@ package com.jhwjhw.naverworkscloneapi.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
@@ -13,9 +14,13 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final String allowedOrigin;
+    private final StompJwtChannelInterceptor stompJwtChannelInterceptor;
 
-    public WebSocketConfig(@Value("${app.cors.allowed-origin}") String allowedOrigin) {
+    public WebSocketConfig(
+            @Value("${app.cors.allowed-origin}") String allowedOrigin,
+            StompJwtChannelInterceptor stompJwtChannelInterceptor) {
         this.allowedOrigin = allowedOrigin;
+        this.stompJwtChannelInterceptor = stompJwtChannelInterceptor;
     }
 
     @Override
@@ -31,5 +36,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Next.js 클라이언트가 연결할 WebSocket 엔드포인트.
         registry.addEndpoint("/ws")
                 .setAllowedOrigins(allowedOrigin);
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        // CONNECT의 JWT 검증 후 인증된 사용자만 STOMP 명령을 처리.
+        registration.interceptors(stompJwtChannelInterceptor);
     }
 }

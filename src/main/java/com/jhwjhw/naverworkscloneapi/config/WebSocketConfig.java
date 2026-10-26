@@ -25,8 +25,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // 서버가 /topic으로 발행한 이벤트를 구독자에게 전달.
-        registry.enableSimpleBroker("/topic");
+        // 공개 방 이벤트와 로그인 사용자 전용 이벤트를 분리해 전달.
+        registry.enableSimpleBroker("/topic", "/queue");
+        registry.setUserDestinationPrefix("/user");
         // 클라이언트가 서버로 보내는 STOMP 명령 접두사.
         registry.setApplicationDestinationPrefixes("/app");
     }

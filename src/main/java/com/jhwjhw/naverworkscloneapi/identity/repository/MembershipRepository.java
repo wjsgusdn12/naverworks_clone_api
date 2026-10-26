@@ -15,6 +15,10 @@ public interface MembershipRepository extends JpaRepository<Membership, Long>, J
     // 초기 정책: 한 계정은 한 회사에만 소속되므로 단일 소속만 조회.
     Optional<Membership> findByUserAccountId(Long userAccountId);
 
+    // WebSocket 이벤트에서는 요청 트랜잭션이 없으므로 표시 이름을 함께 조회.
+    @EntityGraph(attributePaths = {"userAccount"})
+    Optional<Membership> findWithUserAccountById(Long membershipId);
+
     // 주소록 한 행을 만드는 데 필요한 다대일 관계를 한 번에 읽어 N+1 조회를 방지.
     @Override
     @EntityGraph(attributePaths = {"company", "userAccount", "department", "jobGrade"})

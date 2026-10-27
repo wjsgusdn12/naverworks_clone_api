@@ -39,6 +39,12 @@ public class ChatMessage {
     @Column(nullable = false)
     private Instant createdAt;
 
+    // 원문 위치는 ID로 연결하고, 인용 내용은 답장 당시 값으로 보존.
+    private Long replyToMessageId;
+    private String replyToSenderName;
+    @Column(length = 2000)
+    private String replyToContent;
+
     // 메시지 본문과 분리해 저장한 멘션 대상. @All은 서버에서 활성 구성원 ID로 확장한다.
     @ElementCollection
     @CollectionTable(name = "chat_message_mention", joinColumns = @JoinColumn(name = "chat_message_id"))
@@ -58,5 +64,11 @@ public class ChatMessage {
 
     public void mention(Set<Long> membershipIds) {
         this.mentionedMembershipIds = new LinkedHashSet<>(membershipIds);
+    }
+
+    public void replyTo(ChatMessage original) {
+        this.replyToMessageId = original.getId();
+        this.replyToSenderName = original.getSenderMembership().getUserAccount().getDisplayName();
+        this.replyToContent = original.getContent();
     }
 }

@@ -14,7 +14,6 @@ import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomUnreadSummary;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -230,10 +229,18 @@ public class ChatRoomService {
         ChatRoom room = sender.getChatRoom();
         requireOpen(room);
         ChatMessage message = new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT);
+        if (request.replyToMessageId() != null) {
+            ChatMessage original = requireRoomMessage(roomId, request.replyToMessageId());
+            if (original.getMessageType() != ChatMessageType.TEXT) {
+                throw new ChatException("CHAT_REPLY_NOT_ALLOWED", "시스템 안내에는 답장할 수 없습니다.");
+            }
+            message.replyTo(original);
+        }
         message.mention(validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds()));
         messageRepository.save(message);
         sender.markRead(message.getId());
-        log.debug("Chat message sent. roomId={}, messageId={}, senderId={}", roomId, message.getId(), requesterId);
+        log.debug("Chat message sent. roomId={}, messageId={}, senderId={}, replyToMessageId={}",
+                roomId, message.getId(), requesterId, message.getReplyToMessageId());
         ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
         // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
@@ -241,21 +248,44 @@ public class ChatRoomService {
     }
 
     @Transactional
-    public ChatRoomResponse.MessagePage messages(Long requesterId, Long roomId, Long cursor) {
+    public ChatRoomResponse.MessagePage messages(Long requesterId, Long roomId, Long cursor,
+            Long anchorMessageId, Long afterCursor) {
         active(roomId, requesterId);
+        int cursorCount = (cursor == null ? 0 : 1) + (anchorMessageId == null ? 0 : 1)
+                + (afterCursor == null ? 0 : 1);
+        if (cursorCount > 1 || (cursor != null && cursor <= 0)
+                || (anchorMessageId != null && anchorMessageId <= 0) || (afterCursor != null && afterCursor <= 0)) {
+            throw new ChatException("CHAT_MESSAGE_CURSOR_INVALID", "메시지 조회 위치가 올바르지 않습니다.");
+        }
         // 목록 응답의 읽음 수가 모달 조회 결과와 같도록 먼저 읽음 위치를 갱신.
         markRead(requesterId, roomId);
-        List<ChatMessage> descending = cursor == null
-                ? messageRepository.findTop50ByChatRoomIdOrderByIdDesc(roomId)
-                : messageRepository.findTop50ByChatRoomIdAndIdLessThanOrderByIdDesc(roomId, cursor);
-        Long nextCursor = descending.size() == 50 ? descending.get(descending.size() - 1).getId() : null;
-        List<ChatRoomResponse.Message> result = new ArrayList<>();
-        Map<Long, ChatMessageReadSummary> readSummaries = readSummaries(descending);
-        for (int index = descending.size() - 1; index >= 0; index--) {
-            ChatMessage message = descending.get(index);
-            result.add(message(message, readSummaries.get(message.getId())));
+        List<ChatMessage> page;
+        if (anchorMessageId != null) {
+            requireRoomMessage(roomId, anchorMessageId);
+            page = messageRepository.findTop50ByChatRoomIdAndIdLessThanEqualOrderByIdDesc(roomId, anchorMessageId);
+        } else if (afterCursor != null) {
+            page = messageRepository.findTop50ByChatRoomIdAndIdGreaterThanOrderByIdAsc(roomId, afterCursor);
+        } else if (cursor != null) {
+            page = messageRepository.findTop50ByChatRoomIdAndIdLessThanOrderByIdDesc(roomId, cursor);
+        } else {
+            page = messageRepository.findTop50ByChatRoomIdOrderByIdDesc(roomId);
         }
-        return new ChatRoomResponse.MessagePage(result, nextCursor);
+        List<ChatMessage> ordered = page.stream().sorted(Comparator.comparing(ChatMessage::getId)).toList();
+        Long nextCursor = afterCursor == null && page.size() == 50 ? ordered.getFirst().getId() : null;
+        Long lastId = ordered.isEmpty() ? null : ordered.getLast().getId();
+        Long newerCursor = lastId != null && messageRepository.existsByChatRoomIdAndIdGreaterThan(roomId, lastId)
+                ? lastId : null;
+        Map<Long, ChatMessageReadSummary> summaries = readSummaries(ordered);
+        List<ChatRoomResponse.Message> result = ordered.stream()
+                .map(item -> message(item, summaries.get(item.getId()))).toList();
+        return new ChatRoomResponse.MessagePage(result, nextCursor, newerCursor);
+    }
+
+    // 원문 ID를 바꿔 다른 방의 메시지를 인용하거나 열람하는 요청 차단.
+    private ChatMessage requireRoomMessage(Long roomId, Long messageId) {
+        return messageRepository.findById(messageId)
+                .filter(item -> item.getChatRoom().getId().equals(roomId))
+                .orElseThrow(() -> new ChatException("CHAT_MESSAGE_NOT_FOUND", "원문 메시지를 찾을 수 없습니다."));
     }
 
     @Transactional
@@ -403,7 +433,9 @@ public class ChatRoomService {
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
-                message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()));
+                message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()),
+                message.getReplyToMessageId() == null ? null : new ChatRoomResponse.Reply(message.getReplyToMessageId(),
+                        message.getReplyToSenderName(), message.getReplyToContent()));
     }
 
     // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.

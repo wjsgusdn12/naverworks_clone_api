@@ -18,6 +18,16 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @EntityGraph(attributePaths = {"senderMembership", "senderMembership.userAccount"})
     List<ChatMessage> findTop50ByChatRoomIdAndIdLessThanOrderByIdDesc(Long chatRoomId, Long cursor);
 
+    // 원문 이동 시 앞쪽 50개만 조회해 전체 과거 기록을 반복 다운로드하지 않음.
+    @EntityGraph(attributePaths = {"senderMembership", "senderMembership.userAccount"})
+    List<ChatMessage> findTop50ByChatRoomIdAndIdLessThanEqualOrderByIdDesc(Long chatRoomId, Long anchor);
+
+    // 과거 원문에서 아래로 스크롤할 때 더 최근 메시지를 순서대로 조회.
+    @EntityGraph(attributePaths = {"senderMembership", "senderMembership.userAccount"})
+    List<ChatMessage> findTop50ByChatRoomIdAndIdGreaterThanOrderByIdAsc(Long chatRoomId, Long cursor);
+
+    boolean existsByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
+
     // 각 방의 마지막 메시지를 한 번에 조회.
     @EntityGraph(attributePaths = {"senderMembership", "senderMembership.userAccount"})
     @Query("select message from ChatMessage message where message.id in ("

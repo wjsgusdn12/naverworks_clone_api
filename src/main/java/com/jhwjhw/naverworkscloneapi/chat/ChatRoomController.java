@@ -116,12 +116,15 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_MESSAGE_CREATED", "메시지를 전송했습니다.", service.sendMessage(id(jwt), chatRoomId, r));
   }
 
-  // 최신 50개 또는 커서 이전의 메시지 조회. 조회 후 현재 위치를 읽음으로 갱신.
+  // 최신·이전·다음 페이지 또는 답장 원문 위치 조회.
   @GetMapping("/message")
   public ApiResponse<ChatRoomResponse.MessagePage> messages(@AuthenticationPrincipal Jwt jwt,
       @RequestParam Long chatRoomId,
-      @RequestParam(required = false) Long cursor) {
-    return ApiResponse.success("CHAT_MESSAGE_FOUND", "메시지를 조회했습니다.", service.messages(id(jwt), chatRoomId, cursor));
+      @RequestParam(required = false) Long cursor,
+      @RequestParam(required = false) Long anchorMessageId,
+      @RequestParam(required = false) Long afterCursor) {
+    return ApiResponse.success("CHAT_MESSAGE_FOUND", "메시지를 조회했습니다.",
+        service.messages(id(jwt), chatRoomId, cursor, anchorMessageId, afterCursor));
   }
 
   // 방을 열었을 때 최신 메시지까지 읽음 처리

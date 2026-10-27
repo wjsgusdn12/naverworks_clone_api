@@ -26,6 +26,6 @@ public record ChatRoomRequest() {
 
   // 텍스트 메시지 전송 요청
   public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content,
-      List<Long> mentionedMembershipIds) {
+      List<Long> mentionedMembershipIds, @Positive Long replyToMessageId) {
   }
 }

@@ -7,6 +7,7 @@ import com.jhwjhw.naverworkscloneapi.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,7 +24,20 @@ public class GlobalExceptionHandler {
         public ResponseEntity<ApiResponse<Void>> handleChatException(ChatException exception, HttpServletRequest request) {
                 log.warn("Chat request rejected. code={}, method={}, path={}", exception.getCode(), request.getMethod(),
                                 request.getRequestURI());
-                return ResponseEntity.badRequest().body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+                HttpStatus status = switch (exception.getCode()) {
+                        case "CHAT_MESSAGE_AUTHOR_REQUIRED" -> HttpStatus.FORBIDDEN;
+                        case "CHAT_MESSAGE_CONFLICT", "CHAT_MESSAGE_ALREADY_DELETED" -> HttpStatus.CONFLICT;
+                        default -> HttpStatus.BAD_REQUEST;
+                };
+                return ResponseEntity.status(status).body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+        }
+
+        @ExceptionHandler(OptimisticLockingFailureException.class)
+        public ResponseEntity<ApiResponse<Void>> handleConcurrentUpdate(OptimisticLockingFailureException exception,
+                        HttpServletRequest request) {
+                log.warn("Concurrent update rejected. method={}, path={}", request.getMethod(), request.getRequestURI());
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.failure("CHAT_MESSAGE_CONFLICT",
+                                "다른 화면에서 메시지가 변경됐습니다. 최신 내용을 확인해 주세요."));
         }
 
         // 주소록 관련 예외 처리

@@ -116,6 +116,23 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_MESSAGE_CREATED", "메시지를 전송했습니다.", service.sendMessage(id(jwt), chatRoomId, r));
   }
 
+  // 작성자 본인만 메시지 수정.
+  @PostMapping("/message/update/{messageId}")
+  public ApiResponse<ChatRoomResponse.Message> updateMessage(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @PathVariable Long messageId,
+      @Valid @RequestBody ChatRoomRequest.MessageUpdateRequest request) {
+    return ApiResponse.success("CHAT_MESSAGE_UPDATED", "메시지를 수정했습니다.",
+        service.updateMessage(id(jwt), chatRoomId, messageId, request));
+  }
+
+  @PostMapping("/message/delete/{messageId}")
+  public ApiResponse<ChatRoomResponse.Message> deleteMessage(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @PathVariable Long messageId,
+      @Valid @RequestBody ChatRoomRequest.MessageDeleteRequest request) {
+    return ApiResponse.success("CHAT_MESSAGE_DELETED", "메시지를 삭제했습니다.",
+        service.deleteMessage(id(jwt), chatRoomId, messageId, request.expectedVersion()));
+  }
+
   // 최신·이전·다음 페이지 또는 답장 원문 위치 조회.
   @GetMapping("/message")
   public ApiResponse<ChatRoomResponse.MessagePage> messages(@AuthenticationPrincipal Jwt jwt,

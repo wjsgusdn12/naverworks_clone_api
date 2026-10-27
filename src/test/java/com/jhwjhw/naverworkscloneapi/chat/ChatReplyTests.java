@@ -76,7 +76,7 @@ class ChatReplyTests {
         // 이름이 변경돼도 인용은 답장 당시의 작성자·줄바꿈을 유지.
         var reloaded = service.messages(senderId, roomId, null, null, null).messages().stream()
                 .filter(item -> item.id().equals(response.id())).findFirst().orElseThrow();
-        assertThat(reloaded.reply()).isEqualTo(new ChatRoomResponse.Reply(original.getId(), "원문 작성자", "첫째 줄\n둘째 줄"));
+        assertThat(reloaded.reply()).isEqualTo(new ChatRoomResponse.Reply(original.getId(), "원문 작성자", "첫째 줄\n둘째 줄", false));
         assertThat(reloaded.content()).isEqualTo("답장 본문");
     }
 

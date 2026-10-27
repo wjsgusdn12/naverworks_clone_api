@@ -124,7 +124,8 @@ public class ChatRoomService {
     @Transactional(readOnly = true)
     public ChatRoomResponse.Detail detail(Long requesterId, Long roomId) {
         active(roomId, requesterId);
-        List<ChatRoomMember> activeMembers = memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId);
+        // 구성원 프로필(계정·직급·부서·회사)을 한 쿼리로 함께 가져와 인원수만큼 추가 조회되는 N+1을 방지.
+        List<ChatRoomMember> activeMembers = memberRepository.findActiveWithProfileByChatRoomId(roomId);
         return new ChatRoomResponse.Detail(room(roomById(roomId), requesterId), activeMembers.stream()
                 .map(member -> member.getMembership().getId()).toList(),
                 activeMembers.stream()
@@ -231,6 +232,7 @@ public class ChatRoomService {
         ChatMessage message = new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT);
         if (request.replyToMessageId() != null) {
             ChatMessage original = requireRoomMessage(roomId, request.replyToMessageId());
+            requireNotDeleted(original);
             if (original.getMessageType() != ChatMessageType.TEXT) {
                 throw new ChatException("CHAT_REPLY_NOT_ALLOWED", "시스템 안내에는 답장할 수 없습니다.");
             }
@@ -245,6 +247,69 @@ public class ChatRoomService {
         // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
         return response;
+    }
+
+    @Transactional
+    public ChatRoomResponse.Message updateMessage(Long requesterId, Long roomId, Long messageId,
+            ChatRoomRequest.MessageUpdateRequest request) {
+        ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
+        requireNotDeleted(message);
+        requireMessageVersion(message, request.expectedVersion());
+        String content = request.content().trim();
+        if (content.isBlank() || content.length() > 2000) {
+            throw new ChatException("CHAT_MESSAGE_CONTENT_INVALID", "메시지는 1~2,000자로 입력해 주세요.");
+        }
+        Set<Long> mentions = validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds());
+        // 변경이 없는 저장은 수정 시각과 버전을 불필요하게 올리지 않음.
+        if (message.getContent().equals(content) && message.getMentionedMembershipIds().equals(mentions)) {
+            return message(message, readSummaries(List.of(message)).get(messageId));
+        }
+        message.editContent(content, mentions);
+        return publishMessageChange("MESSAGE_UPDATED", requesterId, roomId, message);
+    }
+
+    @Transactional
+    public ChatRoomResponse.Message deleteMessage(Long requesterId, Long roomId, Long messageId, Long expectedVersion) {
+        ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
+        // 재시도한 삭제는 같은 결과를 반환하고, 중복 이벤트는 발행하지 않음.
+        if (message.getDeletedAt() != null) return message(message, null);
+        requireMessageVersion(message, expectedVersion);
+        message.deleteContent();
+        return publishMessageChange("MESSAGE_DELETED", requesterId, roomId, message);
+    }
+
+    private ChatRoomResponse.Message publishMessageChange(String type, Long requesterId, Long roomId, ChatMessage message) {
+        // flush 후의 최종 버전을 전파해 REST·실시간 이벤트 순서가 바뀌어도 최신 내용 유지.
+        messageRepository.saveAndFlush(message);
+        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
+        eventPublisher.publishEvent(new ChatMessageChangedEvent(type, roomId, response));
+        log.info("Chat message changed. type={}, roomId={}, messageId={}, requesterId={}, version={}",
+                type, roomId, message.getId(), requesterId, message.getVersion());
+        return response;
+    }
+
+    private ChatMessage requireOwnMessage(Long requesterId, Long roomId, Long messageId) {
+        active(roomId, requesterId);
+        ChatMessage message = requireRoomMessage(roomId, messageId);
+        if (!message.getSenderMembership().getId().equals(requesterId)) {
+            throw new ChatException("CHAT_MESSAGE_AUTHOR_REQUIRED", "본인이 보낸 메시지만 수정·삭제할 수 있습니다.");
+        }
+        if (message.getMessageType() != ChatMessageType.TEXT) {
+            throw new ChatException("CHAT_SYSTEM_MESSAGE_IMMUTABLE", "시스템 안내는 수정·삭제할 수 없습니다.");
+        }
+        return message;
+    }
+
+    private void requireNotDeleted(ChatMessage message) {
+        if (message.getDeletedAt() != null) {
+            throw new ChatException("CHAT_MESSAGE_ALREADY_DELETED", "이미 삭제된 메시지입니다.");
+        }
+    }
+
+    private void requireMessageVersion(ChatMessage message, Long expectedVersion) {
+        if (expectedVersion == null || expectedVersion != message.getVersion()) {
+            throw new ChatException("CHAT_MESSAGE_CONFLICT", "다른 화면에서 메시지가 변경됐습니다. 최신 내용을 확인해 주세요.");
+        }
     }
 
     @Transactional
@@ -307,8 +372,11 @@ public class ChatRoomService {
         if (message.getMessageType() != ChatMessageType.TEXT) {
             throw new ChatException("CHAT_SYSTEM_READ_UNAVAILABLE", "시스템 메시지는 읽음 현황을 제공하지 않습니다.");
         }
-        return memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId).stream()
-                .filter(member -> !member.getMembership().getId().equals(message.getSenderMembership().getId()))
+        requireNotDeleted(message);
+        Long senderId = message.getSenderMembership().getId();
+        // 프로필 연관 엔티티를 미리 함께 조회해 구성원 수와 관계없이 쿼리 수를 일정하게 유지.
+        return memberRepository.findActiveWithProfileByChatRoomId(roomId).stream()
+                .filter(member -> !member.getMembership().getId().equals(senderId))
                 .filter(member -> (member.getLastReadMessageId() != null
                         && member.getLastReadMessageId() >= messageId) == read)
                 .map(member -> readMember(member, read))
@@ -413,7 +481,8 @@ public class ChatRoomService {
                 requesterMember == null || requesterMember.isNotificationEnabled(),
                 requesterMember == null ? ChatNotificationMode.ALL.name()
                         : requesterMember.getNotificationMode().name(),
-                lastMessage != null && lastMessage.getMentionedMembershipIds().contains(requesterId));
+                lastMessage != null && lastMessage.getMentionedMembershipIds().contains(requesterId),
+                lastMessage == null ? null : lastMessage.getId(), lastMessage == null ? 0 : lastMessage.getVersion());
     }
 
     private Map<Long, ChatMessageReadSummary> readSummaries(List<ChatMessage> messages) {
@@ -430,12 +499,18 @@ public class ChatRoomService {
         long recipientCount = readSummary == null ? 0 : readSummary.getRecipientCount();
         long readCount = readSummary == null ? 0 : readSummary.getReadCount();
         long unreadCount = Math.max(0, recipientCount - readCount);
+        boolean deleted = message.getDeletedAt() != null;
+        ChatRoomResponse.Reply reply = null;
+        if (!deleted && message.getReplyToMessageId() != null) {
+            boolean originalDeleted = message.getReplyToMessage() == null || message.getReplyToMessage().getDeletedAt() != null;
+            reply = new ChatRoomResponse.Reply(message.getReplyToMessageId(), message.getReplyToSenderName(),
+                    originalDeleted ? ChatMessage.DELETED_CONTENT : message.getReplyToContent(), originalDeleted);
+        }
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()),
-                message.getReplyToMessageId() == null ? null : new ChatRoomResponse.Reply(message.getReplyToMessageId(),
-                        message.getReplyToSenderName(), message.getReplyToContent()));
+                reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion());
     }
 
     // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.
@@ -457,7 +532,7 @@ public class ChatRoomService {
         String jobGrade = membership.getJobGrade() == null ? null : membership.getJobGrade().getName();
         String departmentName = membership.getDepartment() == null ? null : membership.getDepartment().getName();
         return new ChatRoomResponse.ReadMember(membership.getId(), membership.getUserAccount().getDisplayName(),
-                jobGrade, departmentName, read);
+                jobGrade, departmentName, membership.getCompany().getName(), read);
     }
 
     private ChatRoomResponse.MemberProfile memberProfile(ChatRoomMember member) {

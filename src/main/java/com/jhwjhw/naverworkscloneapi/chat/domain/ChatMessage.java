@@ -11,6 +11,7 @@ import lombok.Getter;
 @Table(name = "chat_message")
 @Getter
 public class ChatMessage {
+    public static final String DELETED_CONTENT = "삭제된 메시지입니다.";
     // 메시지 ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,11 +40,23 @@ public class ChatMessage {
     @Column(nullable = false)
     private Instant createdAt;
 
+    // 같은 메시지를 여러 탭에서 변경해도 이전 내용이 덮어쓰이지 않도록 버전 검사.
+    @Version
+    private long version;
+    private Instant editedAt;
+    private Instant deletedAt;
+
     // 원문 위치는 ID로 연결하고, 인용 내용은 답장 당시 값으로 보존.
+    @Column(name = "reply_to_message_id")
     private Long replyToMessageId;
     private String replyToSenderName;
     @Column(length = 2000)
     private String replyToContent;
+
+    // 인용 당시 내용은 보존하되, 원문 삭제 여부는 현재 상태를 확인해 응답에서 가림.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reply_to_message_id", insertable = false, updatable = false)
+    private ChatMessage replyToMessage;
 
     // 메시지 본문과 분리해 저장한 멘션 대상. @All은 서버에서 활성 구성원 ID로 확장한다.
     @ElementCollection
@@ -70,5 +83,19 @@ public class ChatMessage {
         this.replyToMessageId = original.getId();
         this.replyToSenderName = original.getSenderMembership().getUserAccount().getDisplayName();
         this.replyToContent = original.getContent();
+        this.replyToMessage = original;
+    }
+
+    public void editContent(String content, Set<Long> mentionedMembershipIds) {
+        this.content = content;
+        mention(mentionedMembershipIds);
+        this.editedAt = Instant.now();
+    }
+
+    public void deleteContent() {
+        // 삭제 후 본문·멘션을 다시 노출하지 않고, 원문 연결용 메시지 ID만 유지.
+        this.content = DELETED_CONTENT;
+        this.mentionedMembershipIds.clear();
+        this.deletedAt = Instant.now();
     }
 }

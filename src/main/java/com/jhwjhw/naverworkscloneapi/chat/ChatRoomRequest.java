@@ -28,4 +28,12 @@ public record ChatRoomRequest() {
   public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content,
       List<Long> mentionedMembershipIds, @Positive Long replyToMessageId) {
   }
+
+  // 화면에서 읽은 버전을 함께 전달해 오래된 편집의 덮어쓰기 방지.
+  public record MessageUpdateRequest(@NotBlank @Size(max = 2000) String content,
+      List<Long> mentionedMembershipIds, @NotNull @PositiveOrZero Long expectedVersion) {
+  }
+
+  public record MessageDeleteRequest(@NotNull @PositiveOrZero Long expectedVersion) {
+  }
 }

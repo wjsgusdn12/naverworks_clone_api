@@ -11,7 +11,7 @@ public record ChatRoomResponse() {
             Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName,
             String directCompanyName,
             boolean pinned, Instant pinnedAt, boolean notificationEnabled, String notificationMode,
-            boolean lastMessageMentioned) {
+            boolean lastMessageMentioned, Long lastMessageId, long lastMessageVersion) {
     }
 
     // 채팅방 상세 응답
@@ -26,11 +26,12 @@ public record ChatRoomResponse() {
     // 메시지 목록 응답
     public record Message(Long id, Long senderMembershipId, String senderName, String content, String type,
             Instant createdAt,
-            long unreadCount, long readCount, List<Long> mentionedMembershipIds, Reply reply) {
+            long unreadCount, long readCount, List<Long> mentionedMembershipIds, Reply reply,
+            Instant editedAt, Instant deletedAt, long version) {
     }
 
     // 원문 재조회 없이 인용을 표시하기 위한 답장 당시 정보.
-    public record Reply(Long messageId, String senderName, String content) {
+    public record Reply(Long messageId, String senderName, String content, boolean deleted) {
     }
 
     // 이전 메시지 조회 결과. nextCursor가 null이면 더 오래된 메시지가 없음.
@@ -39,6 +40,6 @@ public record ChatRoomResponse() {
 
     // 읽음/안 읽음 멤버 모달에 필요한 최소 프로필 정보.
     public record ReadMember(Long membershipId, String displayName, String jobGrade, String departmentName,
-            boolean read) {
+            String companyName, boolean read) {
     }
 }

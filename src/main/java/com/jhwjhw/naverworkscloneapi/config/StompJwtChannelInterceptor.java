@@ -26,6 +26,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final Pattern CHAT_ROOM_TOPIC = Pattern.compile("^/topic/chatRoom/(\\d+)$");
+    private static final Pattern PRESENCE_TOPIC = Pattern.compile("^/topic/presence$");
     private static final Pattern USER_TYPING_QUEUE = Pattern.compile("^/user/queue/chatTyping$");
     private static final Pattern CHAT_ROOM_TYPING = Pattern.compile("^/app/chatRoom/(\\d+)/typing$");
 
@@ -53,6 +54,8 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
             if (USER_TYPING_QUEUE.matcher(accessor.getDestination() == null ? "" : accessor.getDestination()).matches()) {
                 validateUserQueueAccess(accessor);
+            } else if (PRESENCE_TOPIC.matcher(accessor.getDestination() == null ? "" : accessor.getDestination()).matches()) {
+                // 인증된 사용자는 전체 구성원의 온라인 상태 이벤트를 구독.
             } else {
                 validateChatRoomAccess(accessor, CHAT_ROOM_TOPIC, "구독");
             }

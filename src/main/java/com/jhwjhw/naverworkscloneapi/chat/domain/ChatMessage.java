@@ -3,6 +3,8 @@ package com.jhwjhw.naverworkscloneapi.chat.domain;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import lombok.Getter;
 
 @Entity
@@ -37,6 +39,12 @@ public class ChatMessage {
     @Column(nullable = false)
     private Instant createdAt;
 
+    // 메시지 본문과 분리해 저장한 멘션 대상. @All은 서버에서 활성 구성원 ID로 확장한다.
+    @ElementCollection
+    @CollectionTable(name = "chat_message_mention", joinColumns = @JoinColumn(name = "chat_message_id"))
+    @Column(name = "membership_id")
+    private Set<Long> mentionedMembershipIds = new LinkedHashSet<>();
+
     protected ChatMessage() {
     }
 
@@ -46,5 +54,9 @@ public class ChatMessage {
         this.content = content;
         this.messageType = type;
         this.createdAt = Instant.now();
+    }
+
+    public void mention(Set<Long> membershipIds) {
+        this.mentionedMembershipIds = new LinkedHashSet<>(membershipIds);
     }
 }

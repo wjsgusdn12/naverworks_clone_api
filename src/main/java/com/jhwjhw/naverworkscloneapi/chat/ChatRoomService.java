@@ -2,6 +2,7 @@ package com.jhwjhw.naverworkscloneapi.chat;
 
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessage;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageType;
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatNotificationMode;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoom;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
@@ -190,8 +191,18 @@ public class ChatRoomService {
     }
 
     @Transactional
-    public void updateNotification(Long requesterId, Long roomId, boolean enabled) {
-        active(roomId, requesterId).updateNotification(enabled);
+    public void updateNotification(Long requesterId, Long roomId, Boolean enabled, String mode) {
+        ChatRoomMember member = active(roomId, requesterId);
+        // 예전 enabled 요청도 허용하고, 새 요청은 세 가지 알림 모드로 처리.
+        if (mode == null || mode.isBlank()) {
+            member.updateNotification(Boolean.TRUE.equals(enabled));
+            return;
+        }
+        try {
+            member.updateNotificationMode(ChatNotificationMode.valueOf(mode));
+        } catch (IllegalArgumentException exception) {
+            throw new ChatException("CHAT_NOTIFICATION_MODE_INVALID", "알림 설정 값이 올바르지 않습니다.");
+        }
     }
 
     @Transactional
@@ -218,8 +229,9 @@ public class ChatRoomService {
         ChatRoomMember sender = active(roomId, requesterId);
         ChatRoom room = sender.getChatRoom();
         requireOpen(room);
-        ChatMessage message = messageRepository
-                .save(new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT));
+        ChatMessage message = new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT);
+        message.mention(validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds()));
+        messageRepository.save(message);
         sender.markRead(message.getId());
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}", roomId, message.getId(), requesterId);
         ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
@@ -368,7 +380,10 @@ public class ChatRoomService {
                 directMember == null ? null : directMember.getMembership().getCompany().getName(),
                 requesterMember != null && requesterMember.getPinnedAt() != null,
                 requesterMember == null ? null : requesterMember.getPinnedAt(),
-                requesterMember == null || requesterMember.isNotificationEnabled());
+                requesterMember == null || requesterMember.isNotificationEnabled(),
+                requesterMember == null ? ChatNotificationMode.ALL.name()
+                        : requesterMember.getNotificationMode().name(),
+                lastMessage != null && lastMessage.getMentionedMembershipIds().contains(requesterId));
     }
 
     private Map<Long, ChatMessageReadSummary> readSummaries(List<ChatMessage> messages) {
@@ -388,7 +403,21 @@ public class ChatRoomService {
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
-                message.getCreatedAt(), unreadCount, readCount);
+                message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()));
+    }
+
+    // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.
+    private Set<Long> validMentionedMemberIds(Long roomId, Long senderId, List<Long> requestedIds) {
+        if (requestedIds == null || requestedIds.isEmpty()) {
+            return Set.of();
+        }
+        Set<Long> activeMemberIds = memberRepository.findByChatRoomIdAndLeftAtIsNull(roomId).stream()
+                .map(member -> member.getMembership().getId())
+                .collect(Collectors.toSet());
+        return requestedIds.stream()
+                .filter(activeMemberIds::contains)
+                .filter(memberId -> !memberId.equals(senderId))
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     private ChatRoomResponse.ReadMember readMember(ChatRoomMember member, boolean read) {

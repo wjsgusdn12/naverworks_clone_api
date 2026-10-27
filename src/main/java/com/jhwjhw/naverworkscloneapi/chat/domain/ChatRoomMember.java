@@ -45,6 +45,11 @@ public class ChatRoomMember {
     @Column(nullable = false)
     private boolean notificationEnabled = true;
 
+    // 알림을 받을 메시지 범위. 기존 boolean은 하위 호환을 위해 함께 유지.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ChatNotificationMode notificationMode = ChatNotificationMode.ALL;
+
     protected ChatRoomMember() {
     }
 
@@ -90,5 +95,12 @@ public class ChatRoomMember {
 
     public void updateNotification(boolean enabled) {
         this.notificationEnabled = enabled;
+        this.notificationMode = enabled ? ChatNotificationMode.ALL : ChatNotificationMode.NONE;
+    }
+
+    // 알림 모드를 한 곳에서 갱신해 boolean 상태와 불일치하지 않게 유지.
+    public void updateNotificationMode(ChatNotificationMode mode) {
+        this.notificationMode = mode;
+        this.notificationEnabled = mode != ChatNotificationMode.NONE;
     }
 }

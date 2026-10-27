@@ -20,6 +20,7 @@ import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.AddressBookSearchHistoryRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
+import com.jhwjhw.naverworkscloneapi.presence.PresenceService;
 import jakarta.persistence.criteria.JoinType;
 import java.time.Duration;
 import java.time.Instant;
@@ -54,6 +55,7 @@ public class AddressBookService {
     private final ContactGroupRepository contactGroupRepository;
     private final ContactGroupMemberRepository contactGroupMemberRepository;
     private final AddressBookSearchHistoryRepository addressBookSearchHistoryRepository;
+    private final PresenceService presenceService;
 
     @Transactional(readOnly = true)
     public List<OrganizationResponse> getOrganization(Long requesterMembershipId) {
@@ -330,8 +332,7 @@ public class AddressBookService {
         if (member.getAwayUntil() != null && member.getAwayUntil().isAfter(Instant.now())) {
             return MemberPresenceStatus.AWAY;
         }
-        // Redis Presence 도입 전에는 현재 로그인한 본인만 온라인으로 표시.
-        return member.getId().equals(requesterMembershipId) ? MemberPresenceStatus.ONLINE
+        return presenceService.isOnline(member.getId()) ? MemberPresenceStatus.ONLINE
                 : MemberPresenceStatus.OFFLINE;
     }
 

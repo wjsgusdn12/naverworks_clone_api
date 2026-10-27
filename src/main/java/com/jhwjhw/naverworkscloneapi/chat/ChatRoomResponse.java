@@ -10,7 +10,8 @@ public record ChatRoomResponse() {
             Instant oldestUnreadMessageAt,
             Long directMembershipId, String directDisplayName, String directJobGradeName, String directDepartmentName,
             String directCompanyName,
-            boolean pinned, Instant pinnedAt, boolean notificationEnabled) {
+            boolean pinned, Instant pinnedAt, boolean notificationEnabled, String notificationMode,
+            boolean lastMessageMentioned) {
     }
 
     // 채팅방 상세 응답
@@ -25,7 +26,7 @@ public record ChatRoomResponse() {
     // 메시지 목록 응답
     public record Message(Long id, Long senderMembershipId, String senderName, String content, String type,
             Instant createdAt,
-            long unreadCount, long readCount) {
+            long unreadCount, long readCount, List<Long> mentionedMembershipIds) {
     }
 
     // 이전 메시지 조회 결과. nextCursor가 null이면 더 오래된 메시지가 없음.

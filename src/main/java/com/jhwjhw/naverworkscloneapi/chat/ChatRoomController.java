@@ -105,7 +105,7 @@ public class ChatRoomController {
   @PostMapping("/notification/update")
   public ApiResponse<Void> notification(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId,
       @Valid @RequestBody ChatRoomRequest.NotificationRequest r) {
-    service.updateNotification(id(jwt), chatRoomId, r.enabled());
+    service.updateNotification(id(jwt), chatRoomId, r.enabled(), r.mode());
     return ApiResponse.success("CHAT_ROOM_NOTIFICATION_UPDATED", "알림 설정을 변경했습니다.", null);
   }
 

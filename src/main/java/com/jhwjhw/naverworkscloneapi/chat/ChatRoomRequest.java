@@ -21,10 +21,11 @@ public record ChatRoomRequest() {
   }
 
   // 채팅방별 알림 설정 요청
-  public record NotificationRequest(boolean enabled) {
+  public record NotificationRequest(Boolean enabled, String mode) {
   }
 
   // 텍스트 메시지 전송 요청
-  public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content) {
+  public record MessageCreateRequest(@NotBlank @Size(max = 2000) String content,
+      List<Long> mentionedMembershipIds) {
   }
 }

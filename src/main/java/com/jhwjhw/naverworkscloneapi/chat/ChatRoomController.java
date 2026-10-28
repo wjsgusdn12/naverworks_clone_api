@@ -133,6 +133,30 @@ public class ChatRoomController {
         service.deleteMessage(id(jwt), chatRoomId, messageId, request.expectedVersion()));
   }
 
+  // 리액션 추가. 이미 눌렀으면 그대로 성공(멱등).
+  @PostMapping("/message/reaction/add")
+  public ApiResponse<List<ChatRoomResponse.Reaction>> addReaction(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId, @Valid @RequestBody ChatRoomRequest.ReactionRequest r) {
+    return ApiResponse.success("CHAT_REACTION_ADDED", "리액션을 추가했습니다.",
+        service.addReaction(id(jwt), chatRoomId, messageId, r.emoji()));
+  }
+
+  // 리액션 취소. 누른 적 없으면 그대로 성공(멱등).
+  @PostMapping("/message/reaction/remove")
+  public ApiResponse<List<ChatRoomResponse.Reaction>> removeReaction(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId, @Valid @RequestBody ChatRoomRequest.ReactionRequest r) {
+    return ApiResponse.success("CHAT_REACTION_REMOVED", "리액션을 취소했습니다.",
+        service.removeReaction(id(jwt), chatRoomId, messageId, r.emoji()));
+  }
+
+  // 특정 이모지를 누른 사람 목록.
+  @GetMapping("/message/reaction/member")
+  public ApiResponse<List<ChatRoomResponse.MemberProfile>> reactionMembers(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId, @RequestParam String emoji) {
+    return ApiResponse.success("CHAT_REACTION_MEMBER_FOUND", "리액션 멤버를 조회했습니다.",
+        service.reactionMembers(id(jwt), chatRoomId, messageId, emoji));
+  }
+
   // 최신·이전·다음 페이지 또는 답장 원문 위치 조회.
   @GetMapping("/message")
   public ApiResponse<ChatRoomResponse.MessagePage> messages(@AuthenticationPrincipal Jwt jwt,

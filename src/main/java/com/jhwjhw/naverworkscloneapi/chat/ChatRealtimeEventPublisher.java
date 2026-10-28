@@ -32,6 +32,15 @@ public class ChatRealtimeEventPublisher {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void publishReactionChanged(ChatReactionChangedEvent event) {
+        messagingTemplate.convertAndSend("/topic/chatRoom/" + event.chatRoomId(),
+                new ChatReactionRealtimeEvent("REACTION_UPDATED", event.chatRoomId(), event.messageId(),
+                        event.emoji(), event.membershipId(), event.action()));
+        log.debug("Realtime reaction change published. roomId={}, messageId={}, emoji={}, membershipId={}, action={}",
+                event.chatRoomId(), event.messageId(), event.emoji(), event.membershipId(), event.action());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void publishMessageReadUpdated(ChatMessageReadUpdatedEvent event) {
         messagingTemplate.convertAndSend("/topic/chatRoom/" + event.chatRoomId(),
                 new ChatReadRealtimeEvent("READ_UPDATED", event.chatRoomId(), event.readerMembershipId(),

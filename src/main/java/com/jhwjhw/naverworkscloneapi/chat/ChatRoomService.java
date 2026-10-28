@@ -1,11 +1,14 @@
 package com.jhwjhw.naverworkscloneapi.chat;
 
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessage;
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageReaction;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageType;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatNotificationMode;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoom;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomMemberRepository;
@@ -19,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,6 +44,7 @@ public class ChatRoomService {
     private final ChatRoomRepository roomRepository;
     private final ChatRoomMemberRepository memberRepository;
     private final ChatMessageRepository messageRepository;
+    private final ChatMessageReactionRepository reactionRepository;
     private final MembershipRepository membershipRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
@@ -251,7 +256,7 @@ public class ChatRoomService {
         sender.markRead(message.getId());
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}, replyToMessageId={}",
                 roomId, message.getId(), requesterId, message.getReplyToMessageId());
-        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
+        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()), List.of());
         notifyMessage(room, sender.getMembership(), message);
         // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
@@ -295,7 +300,7 @@ public class ChatRoomService {
         Set<Long> mentions = validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds());
         // 변경이 없는 저장은 수정 시각과 버전을 불필요하게 올리지 않음.
         if (message.getContent().equals(content) && message.getMentionedMembershipIds().equals(mentions)) {
-            return message(message, readSummaries(List.of(message)).get(messageId));
+            return message(message, readSummaries(List.of(message)).get(messageId), reactions(message, requesterId));
         }
         message.editContent(content, mentions);
         return publishMessageChange("MESSAGE_UPDATED", requesterId, roomId, message);
@@ -305,7 +310,7 @@ public class ChatRoomService {
     public ChatRoomResponse.Message deleteMessage(Long requesterId, Long roomId, Long messageId, Long expectedVersion) {
         ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
         // 재시도한 삭제는 같은 결과를 반환하고, 중복 이벤트는 발행하지 않음.
-        if (message.getDeletedAt() != null) return message(message, null);
+        if (message.getDeletedAt() != null) return message(message, null, List.of());
         requireMessageVersion(message, expectedVersion);
         message.deleteContent();
         return publishMessageChange("MESSAGE_DELETED", requesterId, roomId, message);
@@ -314,7 +319,8 @@ public class ChatRoomService {
     private ChatRoomResponse.Message publishMessageChange(String type, Long requesterId, Long roomId, ChatMessage message) {
         // flush 후의 최종 버전을 전파해 REST·실시간 이벤트 순서가 바뀌어도 최신 내용 유지.
         messageRepository.saveAndFlush(message);
-        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
+        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()),
+                reactions(message, requesterId));
         eventPublisher.publishEvent(new ChatMessageChangedEvent(type, roomId, response));
         log.info("Chat message changed. type={}, roomId={}, messageId={}, requesterId={}, version={}",
                 type, roomId, message.getId(), requesterId, message.getVersion());
@@ -374,8 +380,10 @@ public class ChatRoomService {
         Long newerCursor = lastId != null && messageRepository.existsByChatRoomIdAndIdGreaterThan(roomId, lastId)
                 ? lastId : null;
         Map<Long, ChatMessageReadSummary> summaries = readSummaries(ordered);
+        Map<Long, List<ChatRoomResponse.Reaction>> reactionMap = reactionSummaries(ordered, requesterId);
         List<ChatRoomResponse.Message> result = ordered.stream()
-                .map(item -> message(item, summaries.get(item.getId()))).toList();
+                .map(item -> message(item, summaries.get(item.getId()), reactionMap.getOrDefault(item.getId(), List.of())))
+                .toList();
         return new ChatRoomResponse.MessagePage(result, nextCursor, newerCursor);
     }
 
@@ -531,7 +539,96 @@ public class ChatRoomService {
                 .collect(Collectors.toMap(ChatMessageReadSummary::getMessageId, Function.identity()));
     }
 
-    private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary) {
+    // 리액션 추가. 같은 이모지를 이미 눌렀으면 아무것도 바꾸지 않고 현재 집계만 반환(재시도에 안전).
+    @Transactional
+    public List<ChatRoomResponse.Reaction> addReaction(Long requesterId, Long roomId, Long messageId, String emoji) {
+        ChatRoomMember requester = active(roomId, requesterId);
+        ChatMessage message = requireReactableMessage(roomId, messageId, emoji);
+        if (reactionRepository.findByChatMessageIdAndMembershipIdAndEmoji(messageId, requesterId, emoji).isEmpty()) {
+            // 새 이모지 종류가 추가되는 경우에만 상한을 검사(이미 있는 이모지에 한 명 더 누르는 건 허용).
+            boolean newEmoji = reactionRepository.findSummaryByMessageIds(List.of(messageId), requesterId).stream()
+                    .noneMatch(summary -> summary.getEmoji().equals(emoji));
+            if (newEmoji && reactionRepository.countDistinctEmojiByChatMessageId(messageId) >= ChatMessageReaction.MAX_DISTINCT_EMOJIS) {
+                throw new ChatException("CHAT_REACTION_LIMIT",
+                        "한 메시지에는 최대 " + ChatMessageReaction.MAX_DISTINCT_EMOJIS + "종류의 이모지만 남길 수 있습니다.");
+            }
+            reactionRepository.save(new ChatMessageReaction(message, requester.getMembership(), emoji));
+            eventPublisher.publishEvent(new ChatReactionChangedEvent(roomId, messageId, emoji, requesterId,
+                    ChatReactionChangedEvent.ADDED));
+            log.debug("Chat reaction added. roomId={}, messageId={}, emoji={}, membershipId={}", roomId, messageId, emoji,
+                    requesterId);
+        }
+        return reactions(message, requesterId);
+    }
+
+    // 리액션 취소. 누른 적이 없으면 아무것도 바꾸지 않고 현재 집계만 반환(재시도에 안전).
+    @Transactional
+    public List<ChatRoomResponse.Reaction> removeReaction(Long requesterId, Long roomId, Long messageId, String emoji) {
+        active(roomId, requesterId);
+        ChatMessage message = requireReactableMessage(roomId, messageId, emoji);
+        reactionRepository.findByChatMessageIdAndMembershipIdAndEmoji(messageId, requesterId, emoji).ifPresent(reaction -> {
+            // 리액션은 취소하면 다시 보여 줄 일이 없어 행을 바로 지움(메시지와 달리 논리 삭제 불필요).
+            reactionRepository.delete(reaction);
+            eventPublisher.publishEvent(new ChatReactionChangedEvent(roomId, messageId, emoji, requesterId,
+                    ChatReactionChangedEvent.REMOVED));
+            log.debug("Chat reaction removed. roomId={}, messageId={}, emoji={}, membershipId={}", roomId, messageId,
+                    emoji, requesterId);
+        });
+        reactionRepository.flush();
+        return reactions(message, requesterId);
+    }
+
+    // 특정 이모지를 누른 사람 목록(누른 순서).
+    @Transactional(readOnly = true)
+    public List<ChatRoomResponse.MemberProfile> reactionMembers(Long requesterId, Long roomId, Long messageId,
+            String emoji) {
+        active(roomId, requesterId);
+        requireRoomMessage(roomId, messageId);
+        return reactionRepository.findByChatMessageIdAndEmojiOrderByCreatedAtAsc(messageId, emoji).stream()
+                .map(reaction -> {
+                    Membership membership = reaction.getMembership();
+                    return new ChatRoomResponse.MemberProfile(membership.getId(),
+                            membership.getUserAccount().getDisplayName(),
+                            membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
+                            membership.getDepartment() == null ? null : membership.getDepartment().getName(),
+                            membership.getCompany().getName());
+                })
+                .toList();
+    }
+
+    // 리액션을 남길 수 있는 메시지인지: 이 방의 일반 텍스트이고 삭제되지 않았으며, 이모지가 허용 목록에 있어야 함.
+    private ChatMessage requireReactableMessage(Long roomId, Long messageId, String emoji) {
+        if (!ChatMessageReaction.ALLOWED_EMOJIS.contains(emoji)) {
+            throw new ChatException("CHAT_REACTION_INVALID", "지원하지 않는 이모지입니다.");
+        }
+        ChatMessage message = requireRoomMessage(roomId, messageId);
+        if (message.getMessageType() != ChatMessageType.TEXT) {
+            throw new ChatException("CHAT_REACTION_NOT_ALLOWED", "시스템 안내에는 리액션을 남길 수 없습니다.");
+        }
+        requireNotDeleted(message);
+        return message;
+    }
+
+    // 메시지 한 건의 리액션 집계.
+    private List<ChatRoomResponse.Reaction> reactions(ChatMessage message, Long requesterId) {
+        return reactionSummaries(List.of(message), requesterId).getOrDefault(message.getId(), List.of());
+    }
+
+    // 메시지 묶음의 리액션을 쿼리 한 번으로 집계해 메시지 ID별로 정리.
+    private Map<Long, List<ChatRoomResponse.Reaction>> reactionSummaries(List<ChatMessage> messages, Long requesterId) {
+        List<Long> messageIds = messages.stream().filter(message -> message.getMessageType() == ChatMessageType.TEXT)
+                .map(ChatMessage::getId).toList();
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        return reactionRepository.findSummaryByMessageIds(messageIds, requesterId).stream()
+                .collect(Collectors.groupingBy(ChatMessageReactionSummary::getMessageId, LinkedHashMap::new,
+                        Collectors.mapping(summary -> new ChatRoomResponse.Reaction(summary.getEmoji(),
+                                summary.getCount(), summary.getMineCount() > 0), Collectors.toList())));
+    }
+
+    private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary,
+            List<ChatRoomResponse.Reaction> reactions) {
         long recipientCount = readSummary == null ? 0 : readSummary.getRecipientCount();
         long readCount = readSummary == null ? 0 : readSummary.getReadCount();
         long unreadCount = Math.max(0, recipientCount - readCount);
@@ -546,7 +643,7 @@ public class ChatRoomService {
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()),
-                reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion());
+                reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion(), reactions);
     }
 
     // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.

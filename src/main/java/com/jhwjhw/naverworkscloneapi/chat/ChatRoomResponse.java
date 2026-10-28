@@ -27,7 +27,11 @@ public record ChatRoomResponse() {
     public record Message(Long id, Long senderMembershipId, String senderName, String content, String type,
             Instant createdAt,
             long unreadCount, long readCount, List<Long> mentionedMembershipIds, Reply reply,
-            Instant editedAt, Instant deletedAt, long version) {
+            Instant editedAt, Instant deletedAt, long version, List<Reaction> reactions) {
+    }
+
+    // 말풍선 아래 묶음 표시용 이모지별 집계. reactedByMe는 요청한 사용자 기준.
+    public record Reaction(String emoji, long count, boolean reactedByMe) {
     }
 
     // 원문 재조회 없이 인용을 표시하기 위한 답장 당시 정보.

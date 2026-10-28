@@ -36,4 +36,8 @@ public record ChatRoomRequest() {
 
   public record MessageDeleteRequest(@NotNull @PositiveOrZero Long expectedVersion) {
   }
+
+  // 리액션 추가·취소 요청. emoji는 코드명(thumbs_up 등).
+  public record ReactionRequest(@NotBlank @Size(max = 40) String emoji) {
+  }
 }

@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
                 log.warn("Chat request rejected. code={}, method={}, path={}", exception.getCode(), request.getMethod(),
                                 request.getRequestURI());
                 HttpStatus status = switch (exception.getCode()) {
-                        case "CHAT_MESSAGE_AUTHOR_REQUIRED" -> HttpStatus.FORBIDDEN;
+                        case "CHAT_MESSAGE_AUTHOR_REQUIRED", "CHAT_MESSAGE_EDIT_EXPIRED" -> HttpStatus.FORBIDDEN;
                         case "CHAT_MESSAGE_CONFLICT", "CHAT_MESSAGE_ALREADY_DELETED" -> HttpStatus.CONFLICT;
                         default -> HttpStatus.BAD_REQUEST;
                 };

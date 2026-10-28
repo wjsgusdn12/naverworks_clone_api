@@ -15,6 +15,7 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
 import com.jhwjhw.naverworkscloneapi.notification.domain.NotificationCategory;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -33,6 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class ChatRoomService {
+    // 보낸 뒤 이 시간이 지나면 메시지를 수정할 수 없음.
+    static final Duration EDIT_WINDOW = Duration.ofHours(24);
+
     private final ChatRoomRepository roomRepository;
     private final ChatRoomMemberRepository memberRepository;
     private final ChatMessageRepository messageRepository;
@@ -278,6 +282,10 @@ public class ChatRoomService {
             ChatRoomRequest.MessageUpdateRequest request) {
         ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
         requireNotDeleted(message);
+        // 화면에서 버튼을 막아도 API로 직접 호출할 수 있으므로 서버에서도 24시간 제한을 검사.
+        if (message.getCreatedAt().isBefore(Instant.now().minus(EDIT_WINDOW))) {
+            throw new ChatException("CHAT_MESSAGE_EDIT_EXPIRED", "24시간 이내에 보낸 메시지만 수정할 수 있습니다.");
+        }
         requireMessageVersion(message, request.expectedVersion());
         String content = request.content().trim();
         if (content.isBlank() || content.length() > 2000) {

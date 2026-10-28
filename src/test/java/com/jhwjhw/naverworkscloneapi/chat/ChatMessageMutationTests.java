@@ -123,6 +123,23 @@ class ChatMessageMutationTests {
     }
 
     @Test
+    void editIsRejectedAfterTwentyFourHoursButDeleteStillWorks() throws Exception {
+        var original = send("오래된 메시지");
+        // 보낸 시각을 25시간 전으로 되돌려 제한 시간이 지난 상태를 만듦.
+        entityManager.createQuery("update ChatMessage m set m.createdAt = :at where m.id = :id")
+                .setParameter("at", Instant.now().minus(ChatRoomService.EDIT_WINDOW).minusSeconds(3600))
+                .setParameter("id", original.id()).executeUpdate();
+        entityManager.clear();
+        mvc.perform(post("/api/v1/chatRoom/message/update/" + original.id()).param("chatRoomId", room.getId().toString())
+                .header("Authorization", "Bearer " + token(author)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"content\":\"늦은 수정\",\"expectedVersion\":0}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CHAT_MESSAGE_EDIT_EXPIRED"));
+        assertThat(messages.findById(original.id()).orElseThrow().getContent()).isEqualTo("오래된 메시지");
+        // 삭제에는 시간 제한이 없음.
+        assertThat(service.deleteMessage(author.getId(), room.getId(), original.id(), 0L).deletedAt()).isNotNull();
+    }
+
+    @Test
     void administratorCannotEditOrDeleteAnotherAuthorsMessageThroughApi() throws Exception {
         var original = send("작성자 전용");
         mvc.perform(post("/api/v1/chatRoom/message/update/" + original.id()).param("chatRoomId", room.getId().toString())

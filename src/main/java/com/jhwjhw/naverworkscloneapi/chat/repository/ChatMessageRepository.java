@@ -32,6 +32,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
     boolean existsByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
 
+    // 읽음 위치 갱신에는 최신 메시지 ID 하나만 필요하므로 50건을 내려받지 않고 집계만 조회.
+    @Query("select max(message.id) from ChatMessage message where message.chatRoom.id = :roomId")
+    Long findMaxIdByChatRoomId(@Param("roomId") Long roomId);
+
     // 각 방의 마지막 메시지를 한 번에 조회.
     @EntityGraph(attributePaths = {"senderMembership", "senderMembership.userAccount"})
     @Query("select message from ChatMessage message where message.id in ("

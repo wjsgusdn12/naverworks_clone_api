@@ -130,10 +130,11 @@ public class ChatRoomService {
 
     @Transactional(readOnly = true)
     public ChatRoomResponse.Detail detail(Long requesterId, Long roomId) {
-        active(roomId, requesterId);
+        // 권한 검사 때 이미 방을 함께 조회했으므로 다시 찾지 않음.
+        ChatRoom room = active(roomId, requesterId).getChatRoom();
         // 구성원 프로필(계정·직급·부서·회사)을 한 쿼리로 함께 가져와 인원수만큼 추가 조회되는 N+1을 방지.
         List<ChatRoomMember> activeMembers = memberRepository.findActiveWithProfileByChatRoomId(roomId);
-        return new ChatRoomResponse.Detail(room(roomById(roomId), requesterId), activeMembers.stream()
+        return new ChatRoomResponse.Detail(room(room, requesterId), activeMembers.stream()
                 .map(member -> member.getMembership().getId()).toList(),
                 activeMembers.stream()
                         .map(this::memberProfile).toList());
@@ -347,15 +348,15 @@ public class ChatRoomService {
     @Transactional
     public ChatRoomResponse.MessagePage messages(Long requesterId, Long roomId, Long cursor,
             Long anchorMessageId, Long afterCursor) {
-        active(roomId, requesterId);
+        ChatRoomMember requesterMember = active(roomId, requesterId);
         int cursorCount = (cursor == null ? 0 : 1) + (anchorMessageId == null ? 0 : 1)
                 + (afterCursor == null ? 0 : 1);
         if (cursorCount > 1 || (cursor != null && cursor <= 0)
                 || (anchorMessageId != null && anchorMessageId <= 0) || (afterCursor != null && afterCursor <= 0)) {
             throw new ChatException("CHAT_MESSAGE_CURSOR_INVALID", "메시지 조회 위치가 올바르지 않습니다.");
         }
-        // 목록 응답의 읽음 수가 모달 조회 결과와 같도록 먼저 읽음 위치를 갱신.
-        markRead(requesterId, roomId);
+        // 목록 응답의 읽음 수가 모달 조회 결과와 같도록 먼저 읽음 위치를 갱신(권한 검사는 위에서 끝났으므로 재조회 없이 처리).
+        markRead(requesterMember);
         List<ChatMessage> page;
         if (anchorMessageId != null) {
             requireRoomMessage(roomId, anchorMessageId);
@@ -387,11 +388,16 @@ public class ChatRoomService {
 
     @Transactional
     public void markRead(Long requesterId, Long roomId) {
-        ChatRoomMember member = active(roomId, requesterId);
-        List<ChatMessage> latest = messageRepository.findTop50ByChatRoomIdOrderByIdDesc(roomId);
-        if (!latest.isEmpty() && member.markRead(latest.getFirst().getId())) {
+        markRead(active(roomId, requesterId));
+    }
+
+    // 최신 메시지 ID 하나만 조회해 읽음 위치를 옮김. 50건을 내려받던 이전 방식보다 전송량과 시간이 훨씬 적음.
+    private void markRead(ChatRoomMember member) {
+        Long roomId = member.getChatRoom().getId();
+        Long latestId = messageRepository.findMaxIdByChatRoomId(roomId);
+        if (latestId != null && member.markRead(latestId)) {
             // 실제 읽음 위치가 전진한 경우에만 실시간 이벤트를 발행.
-            eventPublisher.publishEvent(new ChatMessageReadUpdatedEvent(roomId, requesterId, latest.getFirst().getId()));
+            eventPublisher.publishEvent(new ChatMessageReadUpdatedEvent(roomId, member.getMembership().getId(), latestId));
         }
     }
 
@@ -424,12 +430,15 @@ public class ChatRoomService {
         return membership;
     }
 
+    // 방 참여·방 종료·계정 활성 여부를 한 번의 조회로 검사(이전에는 지연 로딩 때문에 쿼리 4회).
     private ChatRoomMember active(Long roomId, Long membershipId) {
-        ChatRoomMember member = memberRepository.findByChatRoomIdAndMembershipId(roomId, membershipId)
+        ChatRoomMember member = memberRepository.findWithRoomAndAccountByChatRoomIdAndMembershipId(roomId, membershipId)
                 .filter(ChatRoomMember::isActive)
                 .orElseThrow(() -> new ChatException("CHAT_ROOM_ACCESS_DENIED", "채팅방 참가자가 아닙니다."));
         requireOpen(member.getChatRoom());
-        activeMembership(membershipId);
+        if (!member.getMembership().getUserAccount().isEnabled()) {
+            throw new ChatException("CHAT_MEMBER_INACTIVE", "비활성 구성원은 채팅을 사용할 수 없습니다.");
+        }
         return member;
     }
 
@@ -439,11 +448,6 @@ public class ChatRoomService {
             throw new ChatException("CHAT_OWNER_REQUIRED", "방장만 수행할 수 있습니다.");
         }
         return room;
-    }
-
-    private ChatRoom roomById(Long roomId) {
-        return roomRepository.findById(roomId)
-                .orElseThrow(() -> new ChatException("CHAT_ROOM_NOT_FOUND", "채팅방을 찾을 수 없습니다."));
     }
 
     private void requireOpen(ChatRoom room) {

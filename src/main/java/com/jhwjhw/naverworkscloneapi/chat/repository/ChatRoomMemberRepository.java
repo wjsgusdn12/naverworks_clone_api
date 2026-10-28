@@ -11,6 +11,12 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
         // 채팅방 구성원 조회
         Optional<ChatRoomMember> findByChatRoomIdAndMembershipId(Long chatRoomId, Long membershipId);
 
+        // 권한 검사에 필요한 방·구성원·계정을 한 쿼리로 가져와, 요청마다 반복되던 지연 로딩 3~4회를 없앰.
+        @EntityGraph(attributePaths = { "chatRoom", "membership", "membership.userAccount" })
+        @Query("select member from ChatRoomMember member where member.chatRoom.id = :roomId and member.membership.id = :membershipId")
+        Optional<ChatRoomMember> findWithRoomAndAccountByChatRoomIdAndMembershipId(@Param("roomId") Long roomId,
+                        @Param("membershipId") Long membershipId);
+
         // 구성원 채팅방 목록 조회
         @EntityGraph(attributePaths = { "chatRoom", "chatRoom.ownerMembership", "membership",
                         "membership.userAccount" })

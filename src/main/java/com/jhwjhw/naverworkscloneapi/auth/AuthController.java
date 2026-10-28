@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,9 +26,10 @@ public class AuthController {
 
         // 로그인
         @PostMapping("/login")
-        public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody AuthRequest request) {
+        public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody AuthRequest request,
+                        @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent) {
                 // 액세스 토큰은 응답 본문, 리프레시 토큰은 JavaScript가 읽을 수 없는 쿠키로 반환.
-                AuthService.AuthResult result = authService.login(request);
+                AuthService.AuthResult result = authService.login(request, userAgent);
                 return ResponseEntity.ok()
                                 .header(HttpHeaders.SET_COOKIE,
                                                 authService.createRefreshCookie(result.refreshToken(),

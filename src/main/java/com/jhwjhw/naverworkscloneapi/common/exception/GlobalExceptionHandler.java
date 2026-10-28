@@ -4,6 +4,7 @@ import com.jhwjhw.naverworkscloneapi.auth.InvalidAuthenticationException;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookException;
 import com.jhwjhw.naverworkscloneapi.chat.ChatException;
 import com.jhwjhw.naverworkscloneapi.common.response.ApiResponse;
+import com.jhwjhw.naverworkscloneapi.notification.NotificationException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -38,6 +39,17 @@ public class GlobalExceptionHandler {
                 log.warn("Concurrent update rejected. method={}, path={}", request.getMethod(), request.getRequestURI());
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.failure("CHAT_MESSAGE_CONFLICT",
                                 "다른 화면에서 메시지가 변경됐습니다. 최신 내용을 확인해 주세요."));
+        }
+
+        // 알림 관련 예외 처리
+        @ExceptionHandler(NotificationException.class)
+        public ResponseEntity<ApiResponse<Void>> handleNotificationException(NotificationException exception,
+                        HttpServletRequest request) {
+                log.warn("Notification request rejected. code={}, method={}, path={}", exception.getCode(),
+                                request.getMethod(), request.getRequestURI());
+                HttpStatus status = "NOTIFICATION_NOT_FOUND".equals(exception.getCode()) ? HttpStatus.NOT_FOUND
+                                : HttpStatus.BAD_REQUEST;
+                return ResponseEntity.status(status).body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
         }
 
         // 주소록 관련 예외 처리

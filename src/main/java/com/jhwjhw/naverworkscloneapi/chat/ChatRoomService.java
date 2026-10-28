@@ -13,6 +13,8 @@ import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomUnreadSummary;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
+import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
+import com.jhwjhw.naverworkscloneapi.notification.domain.NotificationCategory;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -36,6 +38,7 @@ public class ChatRoomService {
     private final ChatMessageRepository messageRepository;
     private final MembershipRepository membershipRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final NotificationService notificationService;
 
     @Transactional
     public ChatRoomResponse.Room createDirect(Long requesterId, Long targetId) {
@@ -244,9 +247,30 @@ public class ChatRoomService {
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}, replyToMessageId={}",
                 roomId, message.getId(), requesterId, message.getReplyToMessageId());
         ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()));
+        notifyMessage(room, sender.getMembership(), message);
         // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
         return response;
+    }
+
+    // 보낸 사람을 뺀 활성 참여자에게 방별 알림 설정(끔·멘션만·전체)을 지켜 서비스 알림을 남김.
+    private void notifyMessage(ChatRoom room, Membership sender, ChatMessage message) {
+        String senderName = sender.getUserAccount().getDisplayName();
+        // 그룹방은 방 이름, 1:1·나와의 채팅은 보낸 사람 이름을 제목으로 사용.
+        String title = room.getRoomType() == ChatRoomType.GROUP && room.getName() != null ? room.getName() : senderName;
+        String body = senderName + ": " + message.getContent();
+        String linkPath = "/message?roomId=" + room.getId();
+        for (ChatRoomMember member : memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId())) {
+            Long memberId = member.getMembership().getId();
+            if (memberId.equals(sender.getId()) || member.getNotificationMode() == ChatNotificationMode.NONE) {
+                continue;
+            }
+            if (member.getNotificationMode() == ChatNotificationMode.MENTION
+                    && !message.getMentionedMembershipIds().contains(memberId)) {
+                continue;
+            }
+            notificationService.create(memberId, NotificationCategory.MESSAGE, title, body, linkPath);
+        }
     }
 
     @Transactional

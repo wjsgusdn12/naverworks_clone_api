@@ -4,6 +4,8 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.domain.UserAccount;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.UserAccountRepository;
+import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
+import com.jhwjhw.naverworkscloneapi.notification.domain.NotificationCategory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -37,11 +39,12 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
     private final AppAuthProperties appAuthProperties;
+    private final NotificationService notificationService;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    // 로그인
+    // 로그인. userAgent는 "어떤 브라우저에서 로그인했는지" 시스템 알림에만 사용.
     @Transactional
-    public AuthResult login(AuthRequest request) {
+    public AuthResult login(AuthRequest request, String userAgent) {
         // 계정 없음·비활성 계정·비밀번호 불일치를 같은 응답으로 처리해 계정 존재 여부를 숨김.
         UserAccount userAccount = userAccountRepository.findByEmail(normalizeEmail(request.email()))
                 .filter(UserAccount::isEnabled)
@@ -54,6 +57,9 @@ public class AuthService {
 
         // 비밀번호·토큰·이메일은 남기지 않고 인증 주체 식별자만 운영 로그에 기록.
         log.info("Login succeeded. membershipId={}", membership.getId());
+        // 네이버웍스처럼 새 로그인을 시스템 알림으로 남겨 본인이 아닌 접속을 알아차릴 수 있게 함.
+        notificationService.create(membership.getId(), NotificationCategory.SYSTEM, "로그인 알림",
+                "새로운 브라우저(" + browserName(userAgent) + ")에서 로그인하였습니다.", null);
         return issueTokens(membership, request.rememberMe(), Instant.now().plus(appAuthProperties.refreshTokenExpiration()));
     }
 
@@ -164,6 +170,18 @@ public class AuthService {
         return refreshTokenRepository.findByTokenHash(hashToken(rawRefreshToken))
                 .filter(token -> token.isUsableAt(Instant.now()))
                 .orElseThrow(InvalidAuthenticationException::new);
+    }
+
+    // User-Agent 문자열에서 대표 브라우저 이름만 추출. 순서가 중요: Edge·Opera는 "Chrome"도 포함함.
+    private static String browserName(String userAgent) {
+        String agent = userAgent == null ? "" : userAgent;
+        if (agent.contains("Edg/")) return "Edge";
+        if (agent.contains("OPR/")) return "Opera";
+        if (agent.contains("Whale/")) return "Whale";
+        if (agent.contains("Firefox/")) return "Firefox";
+        if (agent.contains("Chrome/")) return "Chrome";
+        if (agent.contains("Safari/")) return "Safari";
+        return "알 수 없는 브라우저";
     }
 
     // 이메일 정규화

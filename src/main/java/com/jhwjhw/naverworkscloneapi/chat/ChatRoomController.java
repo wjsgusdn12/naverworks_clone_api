@@ -149,12 +149,12 @@ public class ChatRoomController {
         service.removeReaction(id(jwt), chatRoomId, messageId, r.emoji()));
   }
 
-  // 특정 이모지를 누른 사람 목록.
+  // 메시지에 리액션한 사람 목록(누가 어떤 이모지를 눌렀는지).
   @GetMapping("/message/reaction/member")
-  public ApiResponse<List<ChatRoomResponse.MemberProfile>> reactionMembers(@AuthenticationPrincipal Jwt jwt,
-      @RequestParam Long chatRoomId, @RequestParam Long messageId, @RequestParam String emoji) {
+  public ApiResponse<List<ChatRoomResponse.ReactionMember>> reactionMembers(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId) {
     return ApiResponse.success("CHAT_REACTION_MEMBER_FOUND", "리액션 멤버를 조회했습니다.",
-        service.reactionMembers(id(jwt), chatRoomId, messageId, emoji));
+        service.reactionMembers(id(jwt), chatRoomId, messageId));
   }
 
   // 최신·이전·다음 페이지 또는 답장 원문 위치 조회.

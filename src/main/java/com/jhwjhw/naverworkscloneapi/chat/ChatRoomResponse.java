@@ -15,7 +15,12 @@ public record ChatRoomResponse() {
     }
 
     // 채팅방 상세 응답
-    public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members) {
+    public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members,
+            List<ReadCursor> readCursors) {
+    }
+
+    // 구성원별 마지막 읽은 메시지 ID. 화면이 말풍선 읽음 수를 이 값으로 직접 계산해 실시간 이벤트와 어긋나지 않게 함.
+    public record ReadCursor(Long membershipId, Long lastReadMessageId) {
     }
 
     // 1:1 채팅방 상단과 참여자 화면에 공통으로 사용하는 구성원 프로필.
@@ -32,6 +37,10 @@ public record ChatRoomResponse() {
 
     // 말풍선 아래 묶음 표시용 이모지별 집계. reactedByMe는 요청한 사용자 기준.
     public record Reaction(String emoji, long count, boolean reactedByMe) {
+    }
+
+    // 리액션 사용자 모달용. 누른 사람 프로필과 그 사람이 고른 이모지(1인 1개).
+    public record ReactionMember(String emoji, MemberProfile member) {
     }
 
     // 원문 재조회 없이 인용을 표시하기 위한 답장 당시 정보.

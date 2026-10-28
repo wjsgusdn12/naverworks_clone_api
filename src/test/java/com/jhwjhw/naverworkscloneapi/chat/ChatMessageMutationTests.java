@@ -123,7 +123,7 @@ class ChatMessageMutationTests {
     }
 
     @Test
-    void editIsRejectedAfterTwentyFourHoursButDeleteStillWorks() throws Exception {
+    void editDeleteAndReactionAreRejectedAfterTwentyFourHours() throws Exception {
         var original = send("오래된 메시지");
         // 보낸 시각을 25시간 전으로 되돌려 제한 시간이 지난 상태를 만듦.
         entityManager.createQuery("update ChatMessage m set m.createdAt = :at where m.id = :id")
@@ -135,8 +135,17 @@ class ChatMessageMutationTests {
                 .content("{\"content\":\"늦은 수정\",\"expectedVersion\":0}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CHAT_MESSAGE_EDIT_EXPIRED"));
         assertThat(messages.findById(original.id()).orElseThrow().getContent()).isEqualTo("오래된 메시지");
-        // 삭제에는 시간 제한이 없음.
-        assertThat(service.deleteMessage(author.getId(), room.getId(), original.id(), 0L).deletedAt()).isNotNull();
+        // 삭제와 리액션도 같은 24시간 제한을 받음.
+        mvc.perform(post("/api/v1/chatRoom/message/delete/" + original.id()).param("chatRoomId", room.getId().toString())
+                .header("Authorization", "Bearer " + token(author)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"expectedVersion\":0}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CHAT_MESSAGE_DELETE_EXPIRED"));
+        assertThat(messages.findById(original.id()).orElseThrow().getDeletedAt()).isNull();
+        mvc.perform(post("/api/v1/chatRoom/message/reaction/add").param("chatRoomId", room.getId().toString())
+                .param("messageId", original.id().toString())
+                .header("Authorization", "Bearer " + token(author)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emoji\":\"thumbs_up\"}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CHAT_REACTION_EXPIRED"));
     }
 
     @Test

@@ -90,20 +90,24 @@ class ChatReactionTests {
     }
 
     @Test
-    void addIsIdempotentAndAggregatesPerEmoji() {
+    void addIsIdempotentAndOnePersonKeepsOnlyOneEmoji() {
         service.addReaction(other.getId(), room.getId(), messageId, "thumbs_up");
         // 같은 사람이 같은 이모지를 다시 눌러도 수가 늘지 않음(재시도 안전).
         service.addReaction(other.getId(), room.getId(), messageId, "thumbs_up");
         service.addReaction(author.getId(), room.getId(), messageId, "thumbs_up");
+        // 다른 이모지를 누르면 기존 것은 취소되고 새 것으로 바뀜(1인 1개).
         List<ChatRoomResponse.Reaction> fromOther = service.addReaction(other.getId(), room.getId(), messageId, "heart");
         assertThat(fromOther).extracting(ChatRoomResponse.Reaction::emoji).containsExactly("thumbs_up", "heart");
-        assertThat(fromOther.get(0).count()).isEqualTo(2);
-        assertThat(fromOther.get(0).reactedByMe()).isTrue();
+        assertThat(fromOther.get(0).count()).isEqualTo(1);
+        assertThat(fromOther.get(0).reactedByMe()).isFalse();
         assertThat(fromOther.get(1).count()).isEqualTo(1);
+        assertThat(fromOther.get(1).reactedByMe()).isTrue();
         // reactedByMe는 요청한 사람 기준.
         List<ChatRoomResponse.Reaction> fromAuthor = service.removeReaction(author.getId(), room.getId(), messageId, "wow");
+        assertThat(fromAuthor.get(0).reactedByMe()).isTrue();
         assertThat(fromAuthor.get(1).reactedByMe()).isFalse();
         assertThat(events.stream(ChatReactionChangedEvent.class).filter(event -> event.action().equals("added"))).hasSize(3);
+        assertThat(events.stream(ChatReactionChangedEvent.class).filter(event -> event.action().equals("removed"))).hasSize(1);
     }
 
     @Test
@@ -119,20 +123,25 @@ class ChatReactionTests {
     @Test
     void messageListCarriesReactionsAndMemberListShowsWhoReacted() throws Exception {
         service.addReaction(other.getId(), room.getId(), messageId, "pray");
-        service.addReaction(author.getId(), room.getId(), messageId, "pray");
+        service.addReaction(author.getId(), room.getId(), messageId, "heart");
         mvc.perform(get("/api/v1/chatRoom/message").param("chatRoomId", room.getId().toString())
                 .header("Authorization", "Bearer " + token(other)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.messages[0].reactions[0].emoji").value("pray"))
-                .andExpect(jsonPath("$.data.messages[0].reactions[0].count").value(2))
-                .andExpect(jsonPath("$.data.messages[0].reactions[0].reactedByMe").value(true));
+                .andExpect(jsonPath("$.data.messages[0].reactions[0].count").value(1))
+                .andExpect(jsonPath("$.data.messages[0].reactions[0].reactedByMe").value(true))
+                .andExpect(jsonPath("$.data.messages[0].reactions[1].emoji").value("heart"))
+                .andExpect(jsonPath("$.data.messages[0].reactions[1].reactedByMe").value(false));
+        // 이모지 구분 없이 메시지 전체 리액션 사용자를 누른 순서로 돌려주고, 각자 고른 이모지가 함께 옴.
         mvc.perform(get("/api/v1/chatRoom/message/reaction/member").param("chatRoomId", room.getId().toString())
-                .param("messageId", messageId.toString()).param("emoji", "pray")
+                .param("messageId", messageId.toString())
                 .header("Authorization", "Bearer " + token(author)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
-                // 먼저 누른 사람이 앞에 옴.
-                .andExpect(jsonPath("$.data[0].displayName").value("동료"));
+                .andExpect(jsonPath("$.data[0].emoji").value("pray"))
+                .andExpect(jsonPath("$.data[0].member.displayName").value("동료"))
+                .andExpect(jsonPath("$.data[1].emoji").value("heart"))
+                .andExpect(jsonPath("$.data[1].member.displayName").value("작성자"));
     }
 
     @Test

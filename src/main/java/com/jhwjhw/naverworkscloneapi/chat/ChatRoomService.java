@@ -38,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class ChatRoomService {
-    // 보낸 뒤 이 시간이 지나면 메시지를 수정할 수 없음.
+    // 보낸 뒤 이 시간이 지나면 메시지를 수정·삭제하거나 리액션을 남길 수 없음.
     static final Duration EDIT_WINDOW = Duration.ofHours(24);
 
     private final ChatRoomRepository roomRepository;
@@ -142,7 +142,11 @@ public class ChatRoomService {
         return new ChatRoomResponse.Detail(room(room, requesterId), activeMembers.stream()
                 .map(member -> member.getMembership().getId()).toList(),
                 activeMembers.stream()
-                        .map(this::memberProfile).toList());
+                        .map(this::memberProfile).toList(),
+                activeMembers.stream()
+                        .map(member -> new ChatRoomResponse.ReadCursor(member.getMembership().getId(),
+                                member.getLastReadMessageId()))
+                        .toList());
     }
 
     @Transactional
@@ -288,10 +292,7 @@ public class ChatRoomService {
             ChatRoomRequest.MessageUpdateRequest request) {
         ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
         requireNotDeleted(message);
-        // 화면에서 버튼을 막아도 API로 직접 호출할 수 있으므로 서버에서도 24시간 제한을 검사.
-        if (message.getCreatedAt().isBefore(Instant.now().minus(EDIT_WINDOW))) {
-            throw new ChatException("CHAT_MESSAGE_EDIT_EXPIRED", "24시간 이내에 보낸 메시지만 수정할 수 있습니다.");
-        }
+        requireWithinWindow(message, "CHAT_MESSAGE_EDIT_EXPIRED", "24시간 이내에 보낸 메시지만 수정할 수 있습니다.");
         requireMessageVersion(message, request.expectedVersion());
         String content = request.content().trim();
         if (content.isBlank() || content.length() > 2000) {
@@ -311,6 +312,7 @@ public class ChatRoomService {
         ChatMessage message = requireOwnMessage(requesterId, roomId, messageId);
         // 재시도한 삭제는 같은 결과를 반환하고, 중복 이벤트는 발행하지 않음.
         if (message.getDeletedAt() != null) return message(message, null, List.of());
+        requireWithinWindow(message, "CHAT_MESSAGE_DELETE_EXPIRED", "24시간 이내에 보낸 메시지만 삭제할 수 있습니다.");
         requireMessageVersion(message, expectedVersion);
         message.deleteContent();
         return publishMessageChange("MESSAGE_DELETED", requesterId, roomId, message);
@@ -325,6 +327,13 @@ public class ChatRoomService {
         log.info("Chat message changed. type={}, roomId={}, messageId={}, requesterId={}, version={}",
                 type, roomId, message.getId(), requesterId, message.getVersion());
         return response;
+    }
+
+    // 화면에서 버튼을 막아도 API로 직접 호출할 수 있으므로 서버에서도 24시간 제한을 검사.
+    private void requireWithinWindow(ChatMessage message, String code, String reason) {
+        if (message.getCreatedAt().isBefore(Instant.now().minus(EDIT_WINDOW))) {
+            throw new ChatException(code, reason);
+        }
     }
 
     private ChatMessage requireOwnMessage(Long requesterId, Long roomId, Long messageId) {
@@ -540,11 +549,18 @@ public class ChatRoomService {
     }
 
     // 리액션 추가. 같은 이모지를 이미 눌렀으면 아무것도 바꾸지 않고 현재 집계만 반환(재시도에 안전).
+    // 한 사람은 메시지당 이모지 하나만 남길 수 있으므로, 다른 이모지가 있으면 그것을 취소하고 새 것으로 바꿈.
     @Transactional
     public List<ChatRoomResponse.Reaction> addReaction(Long requesterId, Long roomId, Long messageId, String emoji) {
         ChatRoomMember requester = active(roomId, requesterId);
         ChatMessage message = requireReactableMessage(roomId, messageId, emoji);
         if (reactionRepository.findByChatMessageIdAndMembershipIdAndEmoji(messageId, requesterId, emoji).isEmpty()) {
+            for (ChatMessageReaction previous : reactionRepository.findByChatMessageIdAndMembershipId(messageId, requesterId)) {
+                reactionRepository.delete(previous);
+                eventPublisher.publishEvent(new ChatReactionChangedEvent(roomId, messageId, previous.getEmoji(),
+                        requesterId, ChatReactionChangedEvent.REMOVED));
+            }
+            reactionRepository.flush();
             // 새 이모지 종류가 추가되는 경우에만 상한을 검사(이미 있는 이모지에 한 명 더 누르는 건 허용).
             boolean newEmoji = reactionRepository.findSummaryByMessageIds(List.of(messageId), requesterId).stream()
                     .noneMatch(summary -> summary.getEmoji().equals(emoji));
@@ -578,25 +594,25 @@ public class ChatRoomService {
         return reactions(message, requesterId);
     }
 
-    // 특정 이모지를 누른 사람 목록(누른 순서).
+    // 메시지에 리액션한 사람 전체 목록(누른 순서). 누가 어떤 이모지를 골랐는지 함께 내려 줌.
     @Transactional(readOnly = true)
-    public List<ChatRoomResponse.MemberProfile> reactionMembers(Long requesterId, Long roomId, Long messageId,
-            String emoji) {
+    public List<ChatRoomResponse.ReactionMember> reactionMembers(Long requesterId, Long roomId, Long messageId) {
         active(roomId, requesterId);
         requireRoomMessage(roomId, messageId);
-        return reactionRepository.findByChatMessageIdAndEmojiOrderByCreatedAtAsc(messageId, emoji).stream()
+        return reactionRepository.findByChatMessageIdOrderByCreatedAtAsc(messageId).stream()
                 .map(reaction -> {
                     Membership membership = reaction.getMembership();
-                    return new ChatRoomResponse.MemberProfile(membership.getId(),
-                            membership.getUserAccount().getDisplayName(),
-                            membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
-                            membership.getDepartment() == null ? null : membership.getDepartment().getName(),
-                            membership.getCompany().getName());
+                    return new ChatRoomResponse.ReactionMember(reaction.getEmoji(),
+                            new ChatRoomResponse.MemberProfile(membership.getId(),
+                                    membership.getUserAccount().getDisplayName(),
+                                    membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
+                                    membership.getDepartment() == null ? null : membership.getDepartment().getName(),
+                                    membership.getCompany().getName()));
                 })
                 .toList();
     }
 
-    // 리액션을 남길 수 있는 메시지인지: 이 방의 일반 텍스트이고 삭제되지 않았으며, 이모지가 허용 목록에 있어야 함.
+    // 리액션을 남길 수 있는 메시지인지: 이 방의 일반 텍스트이고 삭제되지 않았으며 24시간이 지나지 않았고, 이모지가 허용 목록에 있어야 함.
     private ChatMessage requireReactableMessage(Long roomId, Long messageId, String emoji) {
         if (!ChatMessageReaction.ALLOWED_EMOJIS.contains(emoji)) {
             throw new ChatException("CHAT_REACTION_INVALID", "지원하지 않는 이모지입니다.");
@@ -606,6 +622,7 @@ public class ChatRoomService {
             throw new ChatException("CHAT_REACTION_NOT_ALLOWED", "시스템 안내에는 리액션을 남길 수 없습니다.");
         }
         requireNotDeleted(message);
+        requireWithinWindow(message, "CHAT_REACTION_EXPIRED", "24시간 이내에 보낸 메시지에만 리액션을 남길 수 있습니다.");
         return message;
     }
 

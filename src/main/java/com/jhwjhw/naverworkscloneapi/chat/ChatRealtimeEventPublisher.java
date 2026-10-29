@@ -41,6 +41,14 @@ public class ChatRealtimeEventPublisher {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void publishNoticeChanged(ChatNoticeChangedEvent event) {
+        messagingTemplate.convertAndSend("/topic/chatRoom/" + event.chatRoomId(),
+                new ChatNoticeRealtimeEvent("NOTICE_UPDATED", event.chatRoomId(), event.notice()));
+        log.debug("Realtime notice change published. roomId={}, messageId={}", event.chatRoomId(),
+                event.notice() == null ? null : event.notice().messageId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void publishMessageReadUpdated(ChatMessageReadUpdatedEvent event) {
         messagingTemplate.convertAndSend("/topic/chatRoom/" + event.chatRoomId(),
                 new ChatReadRealtimeEvent("READ_UPDATED", event.chatRoomId(), event.readerMembershipId(),

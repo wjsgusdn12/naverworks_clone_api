@@ -233,22 +233,34 @@ public class AddressBookService {
                 targetMembershipId);
     }
 
+    // 내 접속 상태와 부재중 종료 시각. 상단바 프로필 패널이 씀.
+    @Transactional(readOnly = true)
+    public AddressBookResponse.PresenceResponse getMyPresence(Long requesterMembershipId) {
+        Membership requester = findMembership(requesterMembershipId);
+        return new AddressBookResponse.PresenceResponse(resolvePresenceStatus(requester, requesterMembershipId),
+                requester.getAwayUntil());
+    }
+
+    // 부재중 설정·해제. 바뀐 상태는 WebSocket으로 다른 구성원에게도 바로 알림.
     @Transactional
-    public void updatePresence(Long requesterMembershipId, AddressBookRequest.PresenceRequest request) {
+    public AddressBookResponse.PresenceResponse updatePresence(Long requesterMembershipId,
+            AddressBookRequest.PresenceRequest request) {
         Membership requester = findMembership(requesterMembershipId);
         if (request.status() == PresenceStatus.ONLINE) {
             requester.setAwayUntil(null);
-            return;
+        } else {
+            int awayHours = request.awayHours() == null ? 0 : request.awayHours();
+            if (awayHours < 1 || awayHours > MAX_AWAY_HOURS) {
+                throw new AddressBookException("ADDRESS_BOOK_AWAY_HOURS_INVALID",
+                        "부재중 시간은 1시간 이상 168시간 이하로 설정해 주세요.");
+            }
+            requester.setAwayUntil(Instant.now().plus(Duration.ofHours(awayHours)));
+            log.info("Address book presence updated. membershipId={}, status=AWAY, awayHours={}",
+                    requesterMembershipId, awayHours);
         }
-
-        int awayHours = request.awayHours() == null ? 0 : request.awayHours();
-        if (awayHours < 1 || awayHours > MAX_AWAY_HOURS) {
-            throw new AddressBookException("ADDRESS_BOOK_AWAY_HOURS_INVALID", "부재중 시간은 1시간 이상 168시간 이하로 설정해 주세요.");
-        }
-
-        requester.setAwayUntil(Instant.now().plus(Duration.ofHours(awayHours)));
-        log.info("Address book presence updated. membershipId={}, status=AWAY, awayHours={}", requesterMembershipId,
-                awayHours);
+        presenceService.publishCurrent(requesterMembershipId);
+        return new AddressBookResponse.PresenceResponse(resolvePresenceStatus(requester, requesterMembershipId),
+                requester.getAwayUntil());
     }
 
     @Transactional(readOnly = true)

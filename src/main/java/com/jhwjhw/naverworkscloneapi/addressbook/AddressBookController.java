@@ -107,11 +107,18 @@ public class AddressBookController {
         return ApiResponse.success("ADDRESS_BOOK_FAVORITE_DELETED", "즐겨찾기에서 해제했습니다.", null);
     }
 
+    // 내 접속 상태 조회(상단바 프로필 패널)
+    @GetMapping("/presence/me")
+    public ApiResponse<AddressBookResponse.PresenceResponse> myPresence(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success("ADDRESS_BOOK_PRESENCE_FETCHED", "내 상태를 조회했습니다.",
+                addressBookService.getMyPresence(membershipId(jwt)));
+    }
+
     @PostMapping("/presence/update")
-    public ApiResponse<Void> updatePresence(@AuthenticationPrincipal Jwt jwt,
+    public ApiResponse<AddressBookResponse.PresenceResponse> updatePresence(@AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody AddressBookRequest.PresenceRequest request) {
-        addressBookService.updatePresence(membershipId(jwt), request);
-        return ApiResponse.success("ADDRESS_BOOK_PRESENCE_UPDATED", "상태를 변경했습니다.", null);
+        return ApiResponse.success("ADDRESS_BOOK_PRESENCE_UPDATED", "상태를 변경했습니다.",
+                addressBookService.updatePresence(membershipId(jwt), request));
     }
 
     @GetMapping("/group")

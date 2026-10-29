@@ -57,6 +57,10 @@ public final class AddressBookResponse {
     ) {
     }
 
+    // 내 접속 상태. 부재중이면 종료 시각이 함께 옴.
+    public record PresenceResponse(MemberPresenceStatus status, Instant awayUntil) {
+    }
+
     public enum MemberPresenceStatus {
         ONLINE,
         OFFLINE,

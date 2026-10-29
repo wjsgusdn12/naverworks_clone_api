@@ -57,9 +57,14 @@ public class Membership {
     @Column(name = "hired_at")
     private LocalDate hiredAt;
 
-    // 부재 종료일
+    // 상태 설정(바쁨·휴가 등). NULL이면 설정 안 함.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_type", length = 30)
+    private MemberStatusType statusType;
+
+    // 상태 자동 해제 시각. NULL이면 직접 해제할 때까지 유지. (컬럼명은 예전 이름 away_until 그대로)
     @Column(name = "away_until")
-    private Instant awayUntil;
+    private Instant statusUntil;
 
     // 역할
     @Enumerated(EnumType.STRING)
@@ -110,9 +115,26 @@ public class Membership {
         this.role = role;
     }
 
-    // 부재 종료일 설정
-    public void setAwayUntil(Instant awayUntil) {
-        this.awayUntil = awayUntil;
+    // 상태 설정. statusType이 null이면 해제.
+    public void updateStatus(MemberStatusType statusType, Instant statusUntil) {
+        this.statusType = statusType;
+        this.statusUntil = statusType == null ? null : statusUntil;
+    }
+
+    // 지금 유효한 상태. 자동 해제 시각이 지났으면 null(설정 안 함).
+    public MemberStatusType currentStatusType() {
+        if (statusType == null) {
+            return null;
+        }
+        if (statusUntil != null && !statusUntil.isAfter(Instant.now())) {
+            return null;
+        }
+        return statusType;
+    }
+
+    // 지금 유효한 상태의 자동 해제 시각. 상태가 없거나 지났으면 null.
+    public Instant currentStatusUntil() {
+        return currentStatusType() == null ? null : statusUntil;
     }
 
 }

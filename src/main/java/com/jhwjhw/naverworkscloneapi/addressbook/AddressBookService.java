@@ -1,6 +1,5 @@
 package com.jhwjhw.naverworkscloneapi.addressbook;
 
-import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookRequest.PresenceStatus;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.DepartmentResponse;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.MemberDetailResponse;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse.MemberPageResponse;
@@ -42,15 +41,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-// 회사 범위 주소록 조회와 사용자별 즐겨찾기·부재중 상태를 담당.
+// 회사 범위 주소록 조회와 사용자별 즐겨찾기·상태 설정을 담당.
 public class AddressBookService {
 
     private static final int MAX_PAGE_SIZE = 100;
     private static final int SUGGESTION_PAGE_SIZE = 50;
     private static final int MAX_SEARCH_HISTORY_SIZE = 10;
-    private static final int MAX_AWAY_HOURS = 168;
-    // 종료 시각을 직접 고를 때의 상한.
-    private static final Duration MAX_AWAY_DURATION = Duration.ofDays(90);
+    // 상태 자동 해제 시각의 상한.
+    private static final Duration MAX_STATUS_DURATION = Duration.ofDays(90);
 
     private final MembershipRepository membershipRepository;
     private final CompanyRepository companyRepository;
@@ -235,44 +233,41 @@ public class AddressBookService {
                 targetMembershipId);
     }
 
-    // 내 접속 상태와 부재중 종료 시각. 상단바 프로필 패널이 씀.
+    // 내 접속 상태와 상태 설정. 상단바 프로필 패널이 씀.
     @Transactional(readOnly = true)
-    public AddressBookResponse.PresenceResponse getMyPresence(Long requesterMembershipId) {
+    public AddressBookResponse.MyStatusResponse getMyStatus(Long requesterMembershipId) {
         Membership requester = findMembership(requesterMembershipId);
-        return new AddressBookResponse.PresenceResponse(resolvePresenceStatus(requester, requesterMembershipId),
-                requester.getAwayUntil());
+        return toMyStatusResponse(requester);
     }
 
-    // 부재중 설정·해제. 바뀐 상태는 WebSocket으로 다른 구성원에게도 바로 알림.
+    // 상태 설정·해제. 바뀐 상태는 WebSocket으로 다른 구성원에게도 바로 알림.
     @Transactional
-    public AddressBookResponse.PresenceResponse updatePresence(Long requesterMembershipId,
-            AddressBookRequest.PresenceRequest request) {
+    public AddressBookResponse.MyStatusResponse updateStatus(Long requesterMembershipId,
+            AddressBookRequest.StatusRequest request) {
         Membership requester = findMembership(requesterMembershipId);
-        if (request.status() == PresenceStatus.ONLINE) {
-            requester.setAwayUntil(null);
-        } else if (request.awayUntil() != null) {
-            // 직접 고른 종료 시각. 지금 이후여야 하고 너무 멀면(90일 초과) 거부.
-            Instant now = Instant.now();
-            if (!request.awayUntil().isAfter(now) || request.awayUntil().isAfter(now.plus(MAX_AWAY_DURATION))) {
-                throw new AddressBookException("ADDRESS_BOOK_AWAY_UNTIL_INVALID",
-                        "부재중 종료 시각은 지금 이후, 90일 이내로 설정해 주세요.");
-            }
-            requester.setAwayUntil(request.awayUntil());
-            log.info("Address book presence updated. membershipId={}, status=AWAY, awayUntil={}",
-                    requesterMembershipId, request.awayUntil());
+        if (request.statusType() == null) {
+            requester.updateStatus(null, null);
         } else {
-            int awayHours = request.awayHours() == null ? 0 : request.awayHours();
-            if (awayHours < 1 || awayHours > MAX_AWAY_HOURS) {
-                throw new AddressBookException("ADDRESS_BOOK_AWAY_HOURS_INVALID",
-                        "부재중 시간은 1시간 이상 168시간 이하로 설정해 주세요.");
+            // 자동 해제 시각은 지금 이후여야 하고 너무 멀면(90일 초과) 거부. 없으면 직접 해제할 때까지 유지.
+            Instant until = request.statusUntil();
+            if (until != null) {
+                Instant now = Instant.now();
+                if (!until.isAfter(now) || until.isAfter(now.plus(MAX_STATUS_DURATION))) {
+                    throw new AddressBookException("ADDRESS_BOOK_STATUS_UNTIL_INVALID",
+                            "상태 해제 시각은 지금 이후, 90일 이내로 설정해 주세요.");
+                }
             }
-            requester.setAwayUntil(Instant.now().plus(Duration.ofHours(awayHours)));
-            log.info("Address book presence updated. membershipId={}, status=AWAY, awayHours={}",
-                    requesterMembershipId, awayHours);
+            requester.updateStatus(request.statusType(), until);
         }
+        log.info("Address book status updated. membershipId={}, statusType={}, statusUntil={}",
+                requesterMembershipId, request.statusType(), request.statusUntil());
         presenceService.publishCurrent(requesterMembershipId);
-        return new AddressBookResponse.PresenceResponse(resolvePresenceStatus(requester, requesterMembershipId),
-                requester.getAwayUntil());
+        return toMyStatusResponse(requester);
+    }
+
+    private AddressBookResponse.MyStatusResponse toMyStatusResponse(Membership requester) {
+        return new AddressBookResponse.MyStatusResponse(resolvePresenceStatus(requester),
+                requester.currentStatusType(), requester.currentStatusUntil());
     }
 
     @Transactional(readOnly = true)
@@ -343,7 +338,9 @@ public class AddressBookService {
                 member.getUserAccount().getEmail(),
                 member.getPhoneNumber(),
                 member.getUserAccount().isEnabled(),
-                resolvePresenceStatus(member, requesterMembershipId),
+                resolvePresenceStatus(member),
+                member.currentStatusType(),
+                member.currentStatusUntil(),
                 favorite);
     }
 
@@ -354,16 +351,14 @@ public class AddressBookService {
                 member.getJobGrade() == null ? null : member.getJobGrade().getName(),
                 member.getDepartment() == null ? null : member.getDepartment().getName(), member.getCompany().getName(),
                 member.getUserAccount().getEmail(), member.getPhoneNumber(), member.getHiredAt(),
-                member.getUserAccount().isEnabled(), resolvePresenceStatus(member, requesterMembershipId),
-                member.getAwayUntil(), favorite);
+                member.getUserAccount().isEnabled(), resolvePresenceStatus(member),
+                member.currentStatusType(), member.currentStatusUntil(), favorite);
     }
 
-    private MemberPresenceStatus resolvePresenceStatus(Membership member, Long requesterMembershipId) {
+    // 접속 상태. 상태 설정(바쁨·휴가 등)은 별도 필드라 여기서는 연결 여부만 봄.
+    private MemberPresenceStatus resolvePresenceStatus(Membership member) {
         if (!member.getUserAccount().isEnabled()) {
             return MemberPresenceStatus.INACTIVE;
-        }
-        if (member.getAwayUntil() != null && member.getAwayUntil().isAfter(Instant.now())) {
-            return MemberPresenceStatus.AWAY;
         }
         return presenceService.isOnline(member.getId()) ? MemberPresenceStatus.ONLINE
                 : MemberPresenceStatus.OFFLINE;

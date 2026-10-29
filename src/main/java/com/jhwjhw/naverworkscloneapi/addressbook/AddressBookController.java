@@ -107,18 +107,19 @@ public class AddressBookController {
         return ApiResponse.success("ADDRESS_BOOK_FAVORITE_DELETED", "즐겨찾기에서 해제했습니다.", null);
     }
 
-    // 내 접속 상태 조회(상단바 프로필 패널)
-    @GetMapping("/presence/me")
-    public ApiResponse<AddressBookResponse.PresenceResponse> myPresence(@AuthenticationPrincipal Jwt jwt) {
-        return ApiResponse.success("ADDRESS_BOOK_PRESENCE_FETCHED", "내 상태를 조회했습니다.",
-                addressBookService.getMyPresence(membershipId(jwt)));
+    // 내 접속 상태·상태 설정 조회(상단바 프로필 패널)
+    @GetMapping("/status/me")
+    public ApiResponse<AddressBookResponse.MyStatusResponse> myStatus(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success("ADDRESS_BOOK_STATUS_FETCHED", "내 상태를 조회했습니다.",
+                addressBookService.getMyStatus(membershipId(jwt)));
     }
 
-    @PostMapping("/presence/update")
-    public ApiResponse<AddressBookResponse.PresenceResponse> updatePresence(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody AddressBookRequest.PresenceRequest request) {
-        return ApiResponse.success("ADDRESS_BOOK_PRESENCE_UPDATED", "상태를 변경했습니다.",
-                addressBookService.updatePresence(membershipId(jwt), request));
+    // 상태 설정(바쁨·휴가 등) 변경. statusType이 없으면 해제.
+    @PostMapping("/status/update")
+    public ApiResponse<AddressBookResponse.MyStatusResponse> updateStatus(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddressBookRequest.StatusRequest request) {
+        return ApiResponse.success("ADDRESS_BOOK_STATUS_UPDATED", "상태를 변경했습니다.",
+                addressBookService.updateStatus(membershipId(jwt), request));
     }
 
     @GetMapping("/group")

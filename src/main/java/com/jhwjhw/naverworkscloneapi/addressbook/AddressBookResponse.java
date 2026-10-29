@@ -1,5 +1,6 @@
 package com.jhwjhw.naverworkscloneapi.addressbook;
 
+import com.jhwjhw.naverworkscloneapi.identity.domain.MemberStatusType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -36,6 +37,8 @@ public final class AddressBookResponse {
             String phoneNumber,
             boolean enabled,
             MemberPresenceStatus presenceStatus,
+            MemberStatusType statusType,
+            Instant statusUntil,
             boolean favorite
     ) {
     }
@@ -52,19 +55,21 @@ public final class AddressBookResponse {
             LocalDate hiredAt,
             boolean enabled,
             MemberPresenceStatus presenceStatus,
-            Instant awayUntil,
+            MemberStatusType statusType,
+            Instant statusUntil,
             boolean favorite
     ) {
     }
 
-    // 내 접속 상태. 부재중이면 종료 시각이 함께 옴.
-    public record PresenceResponse(MemberPresenceStatus status, Instant awayUntil) {
+    // 내 접속 상태와 상태 설정. statusType이 null이면 설정 안 함.
+    public record MyStatusResponse(MemberPresenceStatus presenceStatus, MemberStatusType statusType,
+            Instant statusUntil) {
     }
 
+    // 접속 상태. 상태 설정(바쁨·휴가 등)은 statusType으로 따로 내려감.
     public enum MemberPresenceStatus {
         ONLINE,
         OFFLINE,
-        AWAY,
         INACTIVE
     }
 

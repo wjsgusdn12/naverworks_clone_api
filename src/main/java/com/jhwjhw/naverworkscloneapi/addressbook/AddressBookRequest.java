@@ -1,5 +1,6 @@
 package com.jhwjhw.naverworkscloneapi.addressbook;
 
+import com.jhwjhw.naverworkscloneapi.identity.domain.MemberStatusType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotBlank;
@@ -20,18 +21,13 @@ public final class AddressBookRequest {
     public record SearchHistoryCreateRequest(@NotBlank @Size(max = 100) String keyword) {
     }
 
-    // 부재중은 시간(awayHours) 또는 종료 시각(awayUntil) 중 하나로 지정. 둘 다 있으면 종료 시각 우선.
-    public record PresenceRequest(@NotNull PresenceStatus status, @Positive Integer awayHours, Instant awayUntil) {
+    // 상태 설정. statusType이 null이면 해제, statusUntil이 null이면 직접 해제할 때까지 유지.
+    public record StatusRequest(MemberStatusType statusType, Instant statusUntil) {
     }
 
     public record ContactGroupCreateRequest(
             @NotBlank @Size(max = 100) String name,
             @NotNull List<@Positive Long> membershipIds
     ) {
-    }
-
-    public enum PresenceStatus {
-        ONLINE,
-        AWAY
     }
 }

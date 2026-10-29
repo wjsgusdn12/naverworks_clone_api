@@ -38,16 +38,26 @@ config:
     noteTextColor: "#78350f"
     activationBkgColor: "#e0e7ff"
     activationBorderColor: "#818cf8"
-    cScale0: "#6366f1"
-    cScale1: "#0ea5e9"
-    cScale2: "#10b981"
-    cScale3: "#f59e0b"
-    cScale4: "#ec4899"
+    cScale0: "#312e81"
+    cScale1: "#4338ca"
+    cScale2: "#4f46e5"
+    cScale3: "#6366f1"
+    cScale4: "#818cf8"
     cScaleLabel0: "#ffffff"
     cScaleLabel1: "#ffffff"
     cScaleLabel2: "#ffffff"
     cScaleLabel3: "#ffffff"
     cScaleLabel4: "#ffffff"
+    cScalePeer0: "#312e81"
+    cScalePeer1: "#4338ca"
+    cScalePeer2: "#4f46e5"
+    cScalePeer3: "#6366f1"
+    cScalePeer4: "#818cf8"
+    cScaleInv0: "#312e81"
+    cScaleInv1: "#4338ca"
+    cScaleInv2: "#4f46e5"
+    cScaleInv3: "#6366f1"
+    cScaleInv4: "#818cf8"
     attributeBackgroundColorEven: "#f8fafc"
     attributeBackgroundColorOdd: "#ffffff"
 ---
@@ -60,8 +70,6 @@ flowchart TB
     Core --> Realtime["실시간 · 접속 상태<br/>STOMP · Presence TTL<br/>Redis Pub/Sub"]
     Core --> Ops["운영<br/>알림 · 감사 로그<br/>Actuator · Prometheus · Grafana"]
     Core --> AI["AI<br/>채팅방 대화 요약<br/>Timeout · Retry · Fallback"]
-    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
-    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
     classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
     classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
     classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold

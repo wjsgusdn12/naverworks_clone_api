@@ -38,16 +38,26 @@ config:
     noteTextColor: "#78350f"
     activationBkgColor: "#e0e7ff"
     activationBorderColor: "#818cf8"
-    cScale0: "#6366f1"
-    cScale1: "#0ea5e9"
-    cScale2: "#10b981"
-    cScale3: "#f59e0b"
-    cScale4: "#ec4899"
+    cScale0: "#312e81"
+    cScale1: "#4338ca"
+    cScale2: "#4f46e5"
+    cScale3: "#6366f1"
+    cScale4: "#818cf8"
     cScaleLabel0: "#ffffff"
     cScaleLabel1: "#ffffff"
     cScaleLabel2: "#ffffff"
     cScaleLabel3: "#ffffff"
     cScaleLabel4: "#ffffff"
+    cScalePeer0: "#312e81"
+    cScalePeer1: "#4338ca"
+    cScalePeer2: "#4f46e5"
+    cScalePeer3: "#6366f1"
+    cScalePeer4: "#818cf8"
+    cScaleInv0: "#312e81"
+    cScaleInv1: "#4338ca"
+    cScaleInv2: "#4f46e5"
+    cScaleInv3: "#6366f1"
+    cScaleInv4: "#818cf8"
     attributeBackgroundColorEven: "#f8fafc"
     attributeBackgroundColorOdd: "#ffffff"
 ---
@@ -61,8 +71,6 @@ flowchart TB
     Msg --> React["리액션<br/>1인 1이모지 · 24h 이내<br/>누른 사람 목록"]
     Msg --> Mention["멘션<br/>@구성원 · @All<br/>알림 규칙과 연결"]
     System["SYSTEM 메시지<br/>초대 · 퇴장 · 공지 안내"] -.->|"읽음 · 공지 · 리액션 대상 아님"| Msg
-    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
-    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
     classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
     classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
     classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold

@@ -6,9 +6,13 @@ public record AuthMemberResponse(
         Long membershipId,
         // 회사 ID
         Long companyId,
+        // 회사 이름
+        String companyName,
         // 사용자 계정 ID
         Long userAccountId,
-        // 이메일
+        // 로그인 아이디
+        String loginId,
+        // 이메일(선택 입력이라 비어 있을 수 있음)
         String email,
         // 표시 이름
         String displayName,

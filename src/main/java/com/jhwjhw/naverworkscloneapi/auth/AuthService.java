@@ -1,7 +1,14 @@
 package com.jhwjhw.naverworkscloneapi.auth;
 
+import com.jhwjhw.naverworkscloneapi.identity.domain.Company;
+import com.jhwjhw.naverworkscloneapi.identity.domain.Department;
+import com.jhwjhw.naverworkscloneapi.identity.domain.JobGrade;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
+import com.jhwjhw.naverworkscloneapi.identity.domain.Role;
 import com.jhwjhw.naverworkscloneapi.identity.domain.UserAccount;
+import com.jhwjhw.naverworkscloneapi.identity.repository.CompanyRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.JobGradeRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.UserAccountRepository;
 import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
@@ -35,6 +42,9 @@ public class AuthService {
 
     private final UserAccountRepository userAccountRepository;
     private final MembershipRepository membershipRepository;
+    private final CompanyRepository companyRepository;
+    private final DepartmentRepository departmentRepository;
+    private final JobGradeRepository jobGradeRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
@@ -45,8 +55,10 @@ public class AuthService {
     // 로그인. userAgent는 "어떤 브라우저에서 로그인했는지" 시스템 알림에만 사용.
     @Transactional
     public AuthResult login(AuthRequest request, String userAgent) {
-        // 계정 없음·비활성 계정·비밀번호 불일치를 같은 응답으로 처리해 계정 존재 여부를 숨김.
-        UserAccount userAccount = userAccountRepository.findByEmail(normalizeEmail(request.email()))
+        // 아이디로 먼저 찾고 없으면 이메일로. 계정 없음·비활성·비밀번호 불일치는 같은 응답으로 처리해 존재 여부를 숨김.
+        String identifier = normalizeEmail(request.loginId());
+        UserAccount userAccount = userAccountRepository.findByLoginId(identifier)
+                .or(() -> userAccountRepository.findByEmail(identifier))
                 .filter(UserAccount::isEnabled)
                 .filter(account -> passwordEncoder.matches(request.password(), account.getPasswordHash()))
                 .orElseThrow(InvalidAuthenticationException::new);
@@ -122,6 +134,158 @@ public class AuthService {
                 .path("/api/v1/auth")
                 .maxAge(0)
                 .build();
+    }
+
+    // 가입 화면용: 체험 회사 이름과 부서·직급 목록.
+    @Transactional(readOnly = true)
+    public SignupResponse.Options signupOptions() {
+        Company demo = demoCompany();
+        return new SignupResponse.Options(demo.getName(),
+                departmentRepository.findByCompanyIdOrderByNameAsc(demo.getId()).stream()
+                        .filter(Department::isEnabled)
+                        .map(department -> new SignupResponse.Option(department.getId(), department.getName()))
+                        .toList(),
+                jobGradeRepository.findByCompanyIdOrderBySortOrderAsc(demo.getId()).stream()
+                        .filter(JobGrade::isEnabled)
+                        .map(grade -> new SignupResponse.Option(grade.getId(), grade.getName()))
+                        .toList());
+    }
+
+    // 공개 가입. 체험 회사 참여 / 새 회사 만들기(대표) / 초대 코드 참여 중 하나로 소속을 정하고 바로 로그인 세션을 발급.
+    @Transactional
+    public SignupResult signup(SignupRequest request, String userAgent) {
+        String loginId = request.loginId().trim().toLowerCase(Locale.ROOT);
+        String email = request.email() == null || request.email().isBlank() ? null : normalizeEmail(request.email());
+        if (userAccountRepository.existsByLoginId(loginId)) {
+            throw new AuthException("AUTH_LOGIN_ID_TAKEN", "이미 사용 중인 아이디입니다.");
+        }
+        if (email != null && userAccountRepository.existsByEmail(email)) {
+            throw new AuthException("AUTH_EMAIL_TAKEN", "이미 등록된 이메일입니다.");
+        }
+
+        UserAccount userAccount = new UserAccount(loginId, email, passwordEncoder.encode(request.password()),
+                request.displayName().trim());
+        String recoveryCode = createRecoveryCode();
+        userAccount.updateRecoveryCodeHash(hashToken(recoveryCode));
+        userAccountRepository.save(userAccount);
+
+        Membership membership = switch (request.joinType()) {
+            case DEMO -> joinDemoCompany(userAccount, request);
+            case NEW_COMPANY -> createCompanyAsOwner(userAccount, request.companyName());
+            case INVITE -> joinByInviteCode(userAccount, request.inviteCode());
+        };
+        String phone = request.phoneNumber() == null || request.phoneNumber().isBlank() ? null
+                : request.phoneNumber().trim();
+        if (phone != null) {
+            membership.updateProfile(membership.getDepartment(), membership.getJobGrade(), membership.getJobTitle(),
+                    phone, membership.getHiredAt(), membership.getRole());
+        }
+        membershipRepository.save(membership);
+
+        log.info("Signup succeeded. membershipId={}, companyId={}, joinType={}", membership.getId(),
+                membership.getCompany().getId(), request.joinType());
+        notificationService.create(membership.getId(), NotificationCategory.SYSTEM, "가입을 환영합니다",
+                "복구 코드는 내 프로필에서 다시 확인할 수 있습니다. 브라우저: " + browserName(userAgent), null);
+        AuthResult session = issueTokens(membership, false, Instant.now().plus(appAuthProperties.refreshTokenExpiration()));
+        return new SignupResult(session, recoveryCode);
+    }
+
+    // 체험 회사 참여. 부서·직급은 체험 회사 것만 허용.
+    private Membership joinDemoCompany(UserAccount userAccount, SignupRequest request) {
+        Company demo = demoCompany();
+        Department department = request.departmentId() == null ? null
+                : departmentRepository.findById(request.departmentId())
+                        .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
+                        .orElseThrow(() -> new AuthException("AUTH_DEPARTMENT_INVALID", "선택한 부서를 찾을 수 없습니다."));
+        JobGrade jobGrade = request.jobGradeId() == null ? null
+                : jobGradeRepository.findById(request.jobGradeId())
+                        .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
+                        .orElseThrow(() -> new AuthException("AUTH_JOB_GRADE_INVALID", "선택한 직급을 찾을 수 없습니다."));
+        Membership membership = new Membership(demo, userAccount, department, Role.USER);
+        if (jobGrade != null) {
+            membership.updateProfile(department, jobGrade, null, null, null, Role.USER);
+        }
+        return membership;
+    }
+
+    // 새 회사 만들기. 만든 사람이 관리자이자 "대표" 직급·직책을 가짐. 기본 부서 하나를 함께 생성.
+    private Membership createCompanyAsOwner(UserAccount userAccount, String companyName) {
+        String name = companyName == null ? "" : companyName.trim();
+        if (name.isEmpty()) {
+            throw new AuthException("AUTH_COMPANY_NAME_REQUIRED", "회사 이름을 입력해 주세요.");
+        }
+        if (companyRepository.existsByName(name)) {
+            throw new AuthException("AUTH_COMPANY_NAME_TAKEN", "이미 있는 회사 이름입니다.");
+        }
+        Company company = companyRepository.save(new Company(name));
+        Department department = departmentRepository.save(new Department(company, "경영지원"));
+        JobGrade owner = jobGradeRepository.save(new JobGrade(company, "대표", 1));
+        jobGradeRepository.save(new JobGrade(company, "사원", 2));
+        Membership membership = new Membership(company, userAccount, department, Role.ADMIN);
+        membership.updateProfile(department, owner, "대표", null, null, Role.ADMIN);
+        return membership;
+    }
+
+    // 초대 코드로 참여. 코드는 관리자가 발급한 것만 유효.
+    private Membership joinByInviteCode(UserAccount userAccount, String inviteCode) {
+        String code = inviteCode == null ? "" : inviteCode.trim().toUpperCase(Locale.ROOT);
+        Company company = companyRepository.findByInviteCode(code)
+                .orElseThrow(() -> new AuthException("AUTH_INVITE_CODE_INVALID", "초대 코드가 올바르지 않습니다."));
+        return new Membership(company, userAccount, null, Role.USER);
+    }
+
+    // 복구 코드 재발급. 이전 코드는 즉시 무효.
+    @Transactional
+    public SignupResponse.RecoveryCode regenerateRecoveryCode(Long membershipId) {
+        Membership membership = membershipRepository.findById(membershipId)
+                .orElseThrow(InvalidAuthenticationException::new);
+        String recoveryCode = createRecoveryCode();
+        membership.getUserAccount().updateRecoveryCodeHash(hashToken(recoveryCode));
+        log.info("Recovery code regenerated. membershipId={}", membershipId);
+        return new SignupResponse.RecoveryCode(recoveryCode);
+    }
+
+    // 회사 초대 코드. 관리자만 볼 수 있고, 처음 볼 때 발급.
+    @Transactional
+    public SignupResponse.InviteCode companyInviteCode(Long membershipId, boolean regenerate) {
+        Membership membership = membershipRepository.findById(membershipId)
+                .orElseThrow(InvalidAuthenticationException::new);
+        if (membership.getRole() != Role.ADMIN) {
+            throw new AuthException("AUTH_INVITE_CODE_FORBIDDEN", "초대 코드는 관리자만 볼 수 있습니다.");
+        }
+        Company company = membership.getCompany();
+        if (company.getInviteCode() == null || regenerate) {
+            company.issueInviteCode(createInviteCode());
+            log.info("Company invite code issued. companyId={}", company.getId());
+        }
+        return new SignupResponse.InviteCode(company.getName(), company.getInviteCode());
+    }
+
+    private Company demoCompany() {
+        return companyRepository.findFirstByDemoTrue()
+                .orElseThrow(() -> new AuthException("AUTH_DEMO_COMPANY_MISSING", "체험 회사가 설정되어 있지 않습니다."));
+    }
+
+    // 헷갈리는 글자(0·O·1·I)를 뺀 알파벳으로 XXXX-XXXX-XXXX-XXXX 형태의 복구 코드 생성.
+    private static final String CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    private String createRecoveryCode() {
+        return randomCode(16, 4);
+    }
+
+    private String createInviteCode() {
+        return randomCode(8, 4);
+    }
+
+    private String randomCode(int length, int groupSize) {
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < length; index++) {
+            if (index > 0 && index % groupSize == 0) {
+                builder.append('-');
+            }
+            builder.append(CODE_ALPHABET.charAt(secureRandom.nextInt(CODE_ALPHABET.length())));
+        }
+        return builder.toString();
     }
 
     // 토큰 발급
@@ -214,7 +378,9 @@ public class AuthService {
         return new AuthMemberResponse(
                 membership.getId(),
                 membership.getCompany().getId(),
+                membership.getCompany().getName(),
                 userAccount.getId(),
+                userAccount.getLoginId(),
                 userAccount.getEmail(),
                 userAccount.getDisplayName(),
                 membership.getRole().name());
@@ -222,5 +388,9 @@ public class AuthService {
 
     // Controller에 응답 본문과 HttpOnly 쿠키 값을 함께 전달하는 서비스 내부 결과 객체.
     public record AuthResult(AuthResponse response, String refreshToken, boolean persistentLogin, Instant sessionExpiresAt) {
+    }
+
+    // 가입 결과: 로그인 세션 + 한 번만 보여 줄 복구 코드 원문.
+    public record SignupResult(AuthResult session, String recoveryCode) {
     }
 }

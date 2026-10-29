@@ -1,5 +1,6 @@
 package com.jhwjhw.naverworkscloneapi.common.exception;
 
+import com.jhwjhw.naverworkscloneapi.auth.AuthException;
 import com.jhwjhw.naverworkscloneapi.auth.InvalidAuthenticationException;
 import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookException;
 import com.jhwjhw.naverworkscloneapi.chat.ChatException;
@@ -64,13 +65,23 @@ public class GlobalExceptionHandler {
                                 .body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
         }
 
+        // 가입·복구 오류 처리(이유를 알려 줘도 되는 경우)
+        @ExceptionHandler(AuthException.class)
+        public ResponseEntity<ApiResponse<Void>> handleAuthException(AuthException exception,
+                        HttpServletRequest request) {
+                log.warn("Auth request rejected. code={}, method={}, path={}", exception.getCode(),
+                                request.getMethod(), request.getRequestURI());
+                return ResponseEntity.badRequest()
+                                .body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+        }
+
         // 인증 실패 예외 처리
         @ExceptionHandler(InvalidAuthenticationException.class)
         public ResponseEntity<ApiResponse<Void>> handleInvalidAuthentication(HttpServletRequest request) {
                 // 계정 존재 여부를 노출하지 않는 공통 인증 실패 응답.
                 log.warn("Authentication failed. method={}, path={}", request.getMethod(), request.getRequestURI());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                                .body(ApiResponse.failure("AUTHENTICATION_FAILED", "이메일 또는 비밀번호를 확인해 주세요."));
+                                .body(ApiResponse.failure("AUTHENTICATION_FAILED", "아이디 또는 비밀번호를 확인해 주세요."));
         }
 
         // 유효성 검증 실패 예외 처리

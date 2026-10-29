@@ -9,4 +9,15 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 
     // 이메일 조회
     Optional<UserAccount> findByEmail(String email);
+
+    // 아이디 조회
+    Optional<UserAccount> findByLoginId(String loginId);
+
+    // 가입 시 중복 검사
+    boolean existsByLoginId(String loginId);
+
+    boolean existsByEmail(String email);
+
+    // 복구 코드 해시로 계정 찾기(비밀번호 재설정)
+    Optional<UserAccount> findByRecoveryCodeHash(String recoveryCodeHash);
 }

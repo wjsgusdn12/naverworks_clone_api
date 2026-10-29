@@ -37,6 +37,51 @@ public class AuthController {
                                 .body(ApiResponse.success("AUTH_LOGIN_SUCCESS", "로그인에 성공했습니다.", result.response()));
         }
 
+        // 가입 화면용 체험 회사 정보(로그인 전 접근)
+        @GetMapping("/signup/options")
+        public ApiResponse<SignupResponse.Options> signupOptions() {
+                return ApiResponse.success("AUTH_SIGNUP_OPTIONS_FOUND", "가입 선택 항목을 조회했습니다.",
+                                authService.signupOptions());
+        }
+
+        // 공개 가입. 성공하면 바로 로그인 세션과 복구 코드를 돌려줌.
+        @PostMapping("/signup")
+        public ResponseEntity<ApiResponse<SignupResponse.Created>> signup(@Valid @RequestBody SignupRequest request,
+                        @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent) {
+                AuthService.SignupResult result = authService.signup(request, userAgent);
+                AuthService.AuthResult session = result.session();
+                return ResponseEntity.ok()
+                                .header(HttpHeaders.SET_COOKIE,
+                                                authService.createRefreshCookie(session.refreshToken(),
+                                                                session.persistentLogin(), session.sessionExpiresAt()).toString())
+                                .body(ApiResponse.success("AUTH_SIGNUP_SUCCESS", "가입이 완료되었습니다.",
+                                                new SignupResponse.Created(session.response(), result.recoveryCode())));
+        }
+
+        // 복구 코드 재발급(로그인 후 내 프로필)
+        @PostMapping("/recoveryCode/regenerate")
+        public ApiResponse<SignupResponse.RecoveryCode> regenerateRecoveryCode(@AuthenticationPrincipal Jwt jwt) {
+                Long membershipId = jwt.getClaim("membershipId");
+                return ApiResponse.success("AUTH_RECOVERY_CODE_REGENERATED", "복구 코드를 새로 발급했습니다.",
+                                authService.regenerateRecoveryCode(membershipId));
+        }
+
+        // 회사 초대 코드 조회(관리자). 처음 조회할 때 발급.
+        @GetMapping("/company/inviteCode")
+        public ApiResponse<SignupResponse.InviteCode> companyInviteCode(@AuthenticationPrincipal Jwt jwt) {
+                Long membershipId = jwt.getClaim("membershipId");
+                return ApiResponse.success("AUTH_INVITE_CODE_FOUND", "초대 코드를 조회했습니다.",
+                                authService.companyInviteCode(membershipId, false));
+        }
+
+        // 회사 초대 코드 재발급(관리자). 이전 코드는 즉시 무효.
+        @PostMapping("/company/inviteCode/regenerate")
+        public ApiResponse<SignupResponse.InviteCode> regenerateInviteCode(@AuthenticationPrincipal Jwt jwt) {
+                Long membershipId = jwt.getClaim("membershipId");
+                return ApiResponse.success("AUTH_INVITE_CODE_REGENERATED", "초대 코드를 새로 발급했습니다.",
+                                authService.companyInviteCode(membershipId, true));
+        }
+
         // 토큰 갱신
         @PostMapping("/refresh")
         public ResponseEntity<ApiResponse<AuthResponse>> refresh(

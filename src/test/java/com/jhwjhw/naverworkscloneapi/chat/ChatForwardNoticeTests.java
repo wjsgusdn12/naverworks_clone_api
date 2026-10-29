@@ -100,33 +100,40 @@ class ChatForwardNoticeTests {
     }
 
     @Test
-    void anyMemberCanSetReplaceAndRemoveNotice() {
-        ChatRoomResponse.Notice notice = service.updateNotice(other.getId(), sourceRoom.getId(), messageId);
-        assertThat(notice.messageId()).isEqualTo(messageId);
-        assertThat(notice.content()).isEqualTo("전달할 내용");
-        assertThat(notice.senderName()).isEqualTo("작성자");
-        assertThat(notice.setByName()).isEqualTo("동료");
-        assertThat(service.detail(author.getId(), sourceRoom.getId()).notice().messageId()).isEqualTo(messageId);
+    void anyMemberCanAddMultipleNoticesAndRemoveEachOne() {
+        List<ChatRoomResponse.Notice> notices = service.updateNotice(other.getId(), sourceRoom.getId(), messageId);
+        assertThat(notices).hasSize(1);
+        assertThat(notices.getFirst().messageId()).isEqualTo(messageId);
+        assertThat(notices.getFirst().content()).isEqualTo("전달할 내용");
+        assertThat(notices.getFirst().senderName()).isEqualTo("작성자");
+        assertThat(notices.getFirst().setByName()).isEqualTo("동료");
+        assertThat(service.detail(author.getId(), sourceRoom.getId()).notices()).hasSize(1);
+        // 같은 메시지를 다시 올려도 중복되지 않고 이벤트도 더 생기지 않음.
+        assertThat(service.updateNotice(author.getId(), sourceRoom.getId(), messageId)).hasSize(1);
 
-        // 다른 메시지를 공지로 올리면 교체.
+        // 다른 메시지를 올리면 교체가 아니라 추가되고, 최근 등록이 앞.
         Long second = service.sendMessage(author.getId(), sourceRoom.getId(),
                 new ChatRoomRequest.MessageCreateRequest("두 번째 공지", List.of(), null)).id();
-        assertThat(service.updateNotice(author.getId(), sourceRoom.getId(), second).messageId()).isEqualTo(second);
+        List<ChatRoomResponse.Notice> two = service.updateNotice(author.getId(), sourceRoom.getId(), second);
+        assertThat(two).extracting(ChatRoomResponse.Notice::messageId).containsExactly(second, messageId);
 
-        service.removeNotice(other.getId(), sourceRoom.getId());
-        assertThat(service.detail(author.getId(), sourceRoom.getId()).notice()).isNull();
-        // 이미 해제된 상태에서 다시 해제해도 이벤트가 더 생기지 않음.
-        service.removeNotice(other.getId(), sourceRoom.getId());
-        assertThat(events.stream(ChatNoticeChangedEvent.class)).hasSize(3);
-        assertThat(events.stream(ChatNoticeChangedEvent.class).filter(event -> event.notice() == null)).hasSize(1);
+        // 하나만 내리면 나머지는 그대로.
+        assertThat(service.removeNotice(other.getId(), sourceRoom.getId(), messageId))
+                .extracting(ChatRoomResponse.Notice::messageId).containsExactly(second);
+        // 이미 내린 공지를 다시 내려도 이벤트가 더 생기지 않음.
+        service.removeNotice(other.getId(), sourceRoom.getId(), messageId);
+        assertThat(service.removeNotice(other.getId(), sourceRoom.getId(), second)).isEmpty();
+        assertThat(service.detail(author.getId(), sourceRoom.getId()).notices()).isEmpty();
+        assertThat(events.stream(ChatNoticeChangedEvent.class)).hasSize(4);
+        assertThat(events.stream(ChatNoticeChangedEvent.class).filter(event -> event.notices().isEmpty())).hasSize(1);
     }
 
     @Test
     void deletingNoticeMessageClearsNoticeAndSystemMessageCannotBeNotice() {
         service.updateNotice(author.getId(), sourceRoom.getId(), messageId);
         service.deleteMessage(author.getId(), sourceRoom.getId(), messageId, 0L);
-        assertThat(service.detail(author.getId(), sourceRoom.getId()).notice()).isNull();
-        assertThat(events.stream(ChatNoticeChangedEvent.class).filter(event -> event.notice() == null)).hasSize(1);
+        assertThat(service.detail(author.getId(), sourceRoom.getId()).notices()).isEmpty();
+        assertThat(events.stream(ChatNoticeChangedEvent.class).filter(event -> event.notices().isEmpty())).hasSize(1);
 
         Long systemMessageId = service.messages(author.getId(), sourceRoom.getId(), null, null, null).messages().stream()
                 .filter(item -> item.type().equals("SYSTEM")).findFirst().orElseThrow().id();

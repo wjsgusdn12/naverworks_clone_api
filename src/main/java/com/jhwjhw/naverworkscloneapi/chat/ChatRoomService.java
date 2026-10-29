@@ -120,6 +120,33 @@ public class ChatRoomService {
         return room(room, requesterId);
     }
 
+    // 주소록 "그룹" 탭: 내 회사의 그룹 채팅방 전체(참여 여부 무관). 인원수·마지막 대화 시각은 방 수와 무관하게 쿼리 한 번씩.
+    @Transactional(readOnly = true)
+    public List<ChatRoomResponse.GroupSummary> groupRooms(Long requesterId) {
+        Membership requester = activeMembership(requesterId);
+        List<ChatRoom> rooms = roomRepository.findByCompanyIdAndRoomTypeAndEndedAtIsNullOrderByCreatedAtDesc(
+                requester.getCompany().getId(), ChatRoomType.GROUP);
+        if (rooms.isEmpty()) {
+            return List.of();
+        }
+        List<Long> roomIds = rooms.stream().map(ChatRoom::getId).toList();
+        Map<Long, List<ChatRoomMember>> activeMembers = memberRepository.findActiveByChatRoomIdIn(roomIds).stream()
+                .collect(Collectors.groupingBy(member -> member.getChatRoom().getId()));
+        Map<Long, ChatMessage> lastMessages = messageRepository.findLatestByChatRoomIdIn(roomIds).stream()
+                .collect(Collectors.toMap(message -> message.getChatRoom().getId(), Function.identity()));
+        return rooms.stream().map(room -> {
+            List<ChatRoomMember> members = activeMembers.getOrDefault(room.getId(), List.of());
+            boolean joined = members.stream().anyMatch(member -> member.getMembership().getId().equals(requesterId));
+            Long ownerId = room.getOwnerMembership() == null ? null : room.getOwnerMembership().getId();
+            ChatMessage lastMessage = lastMessages.get(room.getId());
+            return new ChatRoomResponse.GroupSummary(room.getId(), room.getName(), ownerId,
+                    room.getOwnerMembership() == null ? null
+                            : room.getOwnerMembership().getUserAccount().getDisplayName(),
+                    members.size(), joined, requesterId.equals(ownerId), room.getCreatedAt(),
+                    lastMessage == null ? null : lastMessage.getCreatedAt());
+        }).toList();
+    }
+
     @Transactional(readOnly = true)
     public List<ChatRoomResponse.Room> list(Long requesterId) {
         activeMembership(requesterId);

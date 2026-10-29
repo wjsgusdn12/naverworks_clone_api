@@ -25,6 +25,13 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_ROOM_FOUND", "채팅방 목록을 조회했습니다.", service.list(id(jwt)));
   }
 
+  // 주소록 "그룹" 탭: 내 회사의 그룹 채팅방 전체 요약.
+  @GetMapping("/group/list")
+  public ApiResponse<List<ChatRoomResponse.GroupSummary>> groupRooms(@AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success("CHAT_GROUP_ROOM_FOUND", "그룹 채팅방 목록을 조회했습니다.",
+        service.groupRooms(id(jwt)));
+  }
+
   // 채팅방 상세 조회
   @GetMapping("/detail")
   public ApiResponse<ChatRoomResponse.Detail> detail(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {

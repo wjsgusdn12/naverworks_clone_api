@@ -14,6 +14,11 @@ public record ChatRoomResponse() {
             boolean lastMessageMentioned, Long lastMessageId, long lastMessageVersion) {
     }
 
+    // 주소록 "그룹" 탭의 그룹 채팅방 요약. joined는 내가 참여 중인지, owner는 내가 방장인지.
+    public record GroupSummary(Long id, String name, Long ownerMembershipId, String ownerName, int memberCount,
+            boolean joined, boolean owner, Instant createdAt, Instant lastMessageAt) {
+    }
+
     // 채팅방 상세 응답. notices는 최근 등록이 앞(없으면 빈 목록).
     public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members,
             List<ReadCursor> readCursors, List<Notice> notices) {

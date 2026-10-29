@@ -62,14 +62,15 @@ public class AuthController {
         @PostMapping("/recover/lookup")
         public ApiResponse<SignupResponse.RecoverLookup> recoverLookup(@Valid @RequestBody RecoverRequest.Lookup request) {
                 return ApiResponse.success("AUTH_RECOVER_LOOKUP_SUCCESS", "계정을 확인했습니다.",
-                                authService.recoverLookup(request.recoveryCode()));
+                                authService.recoverLookup(request.loginId(), request.recoveryCode()));
         }
 
         // 계정 찾기 2단계: 복구 코드로 비밀번호 재설정(로그인 전). 새 복구 코드를 돌려줌.
         @PostMapping("/recover/reset")
         public ApiResponse<SignupResponse.RecoveryCode> recoverReset(@Valid @RequestBody RecoverRequest.Reset request) {
                 return ApiResponse.success("AUTH_RECOVER_RESET_SUCCESS", "비밀번호를 변경했습니다.",
-                                authService.recoverReset(request.recoveryCode(), request.newPassword()));
+                                authService.recoverReset(request.loginId(), request.recoveryCode(),
+                                                request.newPassword()));
         }
 
         // 회사 옮기기. 회사 ID가 바뀌므로 새 토큰 쌍을 발급하고 리프레시 쿠키도 교체.

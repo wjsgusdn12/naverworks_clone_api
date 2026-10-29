@@ -300,17 +300,17 @@ public class AuthService {
         return new SignupResponse.InviteCode(company.getName(), company.getInviteCode());
     }
 
-    // 계정 찾기 1단계: 복구 코드가 맞으면 어느 계정인지 가려서 알려 줌.
+    // 계정 찾기 1단계: 아이디(또는 이메일)와 복구 코드가 함께 맞으면 계정을 알려 줌.
     @Transactional(readOnly = true)
-    public SignupResponse.RecoverLookup recoverLookup(String recoveryCode) {
-        UserAccount userAccount = accountByRecoveryCode(recoveryCode);
+    public SignupResponse.RecoverLookup recoverLookup(String loginId, String recoveryCode) {
+        UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
         return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName());
     }
 
     // 계정 찾기 2단계: 비밀번호를 바꾸고 기존 로그인을 모두 끊은 뒤, 쓴 복구 코드는 버리고 새 코드를 발급.
     @Transactional
-    public SignupResponse.RecoveryCode recoverReset(String recoveryCode, String newPassword) {
-        UserAccount userAccount = accountByRecoveryCode(recoveryCode);
+    public SignupResponse.RecoveryCode recoverReset(String loginId, String recoveryCode, String newPassword) {
+        UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
         userAccount.changePassword(passwordEncoder.encode(newPassword));
         String nextCode = createRecoveryCode();
         userAccount.updateRecoveryCodeHash(hashToken(nextCode));
@@ -325,11 +325,16 @@ public class AuthService {
         return new SignupResponse.RecoveryCode(nextCode);
     }
 
-    private UserAccount accountByRecoveryCode(String recoveryCode) {
-        String normalized = recoveryCode == null ? "" : recoveryCode.trim().toUpperCase(Locale.ROOT);
-        return userAccountRepository.findByRecoveryCodeHash(hashToken(normalized))
+    // 아이디(또는 이메일)로 계정을 찾고 복구 코드 해시까지 맞아야 통과. 어느 쪽이 틀렸는지는 알려 주지 않음.
+    private UserAccount accountByRecoveryCode(String loginId, String recoveryCode) {
+        String identifier = normalizeEmail(loginId == null ? "" : loginId);
+        String normalizedCode = recoveryCode == null ? "" : recoveryCode.trim().toUpperCase(Locale.ROOT);
+        String codeHash = hashToken(normalizedCode);
+        return userAccountRepository.findByLoginId(identifier)
+                .or(() -> userAccountRepository.findByEmail(identifier))
                 .filter(UserAccount::isEnabled)
-                .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "복구 코드가 올바르지 않습니다."));
+                .filter(account -> codeHash.equals(account.getRecoveryCodeHash()))
+                .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "아이디 또는 복구 코드가 올바르지 않습니다."));
     }
 
     // 앞 2글자와 뒤 2글자만 남기고 가림. 짧은 아이디는 앞 1글자만.

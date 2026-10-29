@@ -368,16 +368,24 @@ class AuthControllerTests {
         String recoveryCode = objectMapper.readTree(signupResult.getResponse().getContentAsString())
                 .path("data").path("recoveryCode").asText();
 
+        // 아이디가 틀리면 코드가 맞아도 거부.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
+                        .content("{\"loginId\":\"someone-else\",\"recoveryCode\":\"" + recoveryCode + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
+
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"Forgetful\",\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
                 .andExpect(jsonPath("$.data.displayName").value("건망증"));
 
         MvcResult resetResult = mockMvc.perform(post("/api/v1/auth/recover/reset")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"recoveryCode\":\"" + recoveryCode + "\",\"newPassword\":\"new-pass-456\"}"))
+                        .content("{\"loginId\":\"forgetful\",\"recoveryCode\":\"" + recoveryCode
+                                + "\",\"newPassword\":\"new-pass-456\"}"))
                 .andExpect(status().isOk())
                 .andReturn();
         String nextCode = objectMapper.readTree(resetResult.getResponse().getContentAsString())
@@ -387,7 +395,7 @@ class AuthControllerTests {
         // 쓴 코드는 더 이상 통하지 않음.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"recoveryCode\":\"" + recoveryCode + "\"}"))
+                        .content("{\"loginId\":\"forgetful\",\"recoveryCode\":\"" + recoveryCode + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
 

@@ -58,7 +58,7 @@ public class AuthController {
                                                 new SignupResponse.Created(session.response(), result.recoveryCode())));
         }
 
-        // 계정 찾기 1단계: 복구 코드로 계정 확인(로그인 전)
+        // 계정 찾기 1단계: 아이디(또는 이메일) 아니면 복구 코드로 계정 확인(로그인 전)
         @PostMapping("/recover/lookup")
         public ApiResponse<SignupResponse.RecoverLookup> recoverLookup(@Valid @RequestBody RecoverRequest.Lookup request) {
                 return ApiResponse.success("AUTH_RECOVER_LOOKUP_SUCCESS", "계정을 확인했습니다.",

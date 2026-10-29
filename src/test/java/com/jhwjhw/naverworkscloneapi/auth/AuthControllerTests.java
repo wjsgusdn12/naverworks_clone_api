@@ -375,17 +375,31 @@ class AuthControllerTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
 
+        // 아이디만으로는 가린 아이디와 이름만 확인되고 비밀번호 재설정은 불가.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"Forgetful\",\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
+                        .content("{\"loginId\":\"Forgetful\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
-                .andExpect(jsonPath("$.data.displayName").value("건망증"));
+                .andExpect(jsonPath("$.data.canReset").value(false));
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"nobody-here\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_ACCOUNT_NOT_FOUND"));
+
+        // 복구 코드만으로 계정이 확인되고 재설정까지 가능.
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
+                .andExpect(jsonPath("$.data.displayName").value("건망증"))
+                .andExpect(jsonPath("$.data.canReset").value(true));
 
         MvcResult resetResult = mockMvc.perform(post("/api/v1/auth/recover/reset")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"forgetful\",\"recoveryCode\":\"" + recoveryCode
-                                + "\",\"newPassword\":\"new-pass-456\"}"))
+                        .content("{\"recoveryCode\":\"" + recoveryCode + "\",\"newPassword\":\"new-pass-456\"}"))
                 .andExpect(status().isOk())
                 .andReturn();
         String nextCode = objectMapper.readTree(resetResult.getResponse().getContentAsString())

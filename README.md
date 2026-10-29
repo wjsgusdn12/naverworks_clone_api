@@ -25,6 +25,59 @@
 
 <!-- diagram: architecture -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart LR
     Browser["브라우저"]
     Front["Next.js 프론트"]
@@ -47,6 +100,13 @@ flowchart LR
     Service --> JPA --> DB
     Service -.-> Redis
     Service -.->|"요약 요청"| LLM
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    class LLM external
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    class DB,Redis store
+    class LLM external
 ```
 
 DB가 진실의 원천이고 Redis는 전달 수단입니다. Redis가 비워져도 대화 기록은 사라지지 않습니다.
@@ -59,6 +119,59 @@ DB가 진실의 원천이고 Redis는 전달 수단입니다. Redis가 비워져
 
 <!-- diagram: deployment -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart TB
     User["사용자"]
     subgraph Vercel["Vercel (무료)"]
@@ -85,6 +198,13 @@ flowchart TB
     API1 --> Supa
     API2 --> Supa
     GH -.->|"이미지 pull"| VM
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    class DNS,GH external
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    class RedisC,Supa store
+    class DNS,GH external
 ```
 
 nginx가 인증서와 WebSocket 업그레이드를 맡고, 같은 이미지로 뜬 api 두 대 사이는 Redis가 이어 줍니다. Supabase의 7일 무활동 정지는 서버의 일일 keep-alive와 GitHub Actions 스케줄로 막습니다.
@@ -97,6 +217,59 @@ nginx가 인증서와 WebSocket 업그레이드를 맡고, 같은 이미지로 �
 
 <!-- diagram: domain-map -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart TB
     Core(("NaverWorks Clone"))
     Core --> Identity["조직 · 인증<br/>회사 · 부서 · 구성원 · 역할<br/>JWT · 데모 모드"]
@@ -106,6 +279,12 @@ flowchart TB
     Core --> Realtime["실시간 · 접속 상태<br/>STOMP · Presence TTL<br/>Redis Pub/Sub"]
     Core --> Ops["운영<br/>알림 · 감사 로그<br/>Actuator · Prometheus · Grafana"]
     Core --> AI["AI<br/>채팅방 대화 요약<br/>Timeout · Retry · Fallback"]
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    class Core focus
 ```
 
 프로젝트·태스크 관리, MSA, Kafka, Kubernetes는 의도적으로 범위에서 뺐습니다. 문제가 재현되기 전에는 도입하지 않습니다.
@@ -118,6 +297,53 @@ flowchart TB
 
 <!-- diagram: erd -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 erDiagram
     COMPANY ||--o{ DEPARTMENT : "포함"
     COMPANY ||--o{ MEMBERSHIP : "소속"
@@ -171,6 +397,58 @@ Access Token은 3시간, Refresh Token은 최초 로그인 기준 최대 7일입
 
 <!-- diagram: auth-flow -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  sequence:
+    actorMargin: 40
+    messageMargin: 44
+    mirrorActors: false
+    wrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 sequenceDiagram
     participant U as 사용자
     participant F as Next.js
@@ -203,6 +481,58 @@ sequenceDiagram
 
 <!-- diagram: message-flow -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  sequence:
+    actorMargin: 40
+    messageMargin: 44
+    mirrorActors: false
+    wrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 sequenceDiagram
     participant A as 보낸 사람 화면
     participant API as API (api-1)
@@ -234,6 +564,59 @@ sequenceDiagram
 
 <!-- diagram: read-cursor -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart LR
     subgraph Room["채팅방 참여자"]
         A["A · last_read = 120"]
@@ -252,6 +635,11 @@ flowchart LR
 
     M119 --> R1["읽음 1 · 안 읽음 1"]
     M120 --> R2["읽음 1 · 안 읽음 1"]
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
 ```
 
 화면도 같은 규칙으로 계산합니다. 서버가 보내는 READ_UPDATED 이벤트는 "누가 어디까지"만 담고, 말풍선의 숫자는 화면이 커서로 다시 셉니다. 이벤트 순서가 뒤바뀌어도 숫자가 어긋나지 않습니다.
@@ -264,6 +652,59 @@ flowchart LR
 
 <!-- diagram: message-rules -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart TB
     Msg["TEXT 메시지"]
     Msg --> Reply["답장<br/>원문 내용 스냅샷 보존<br/>원문 삭제 시 '삭제된 메시지'"]
@@ -274,6 +715,11 @@ flowchart TB
     Msg --> React["리액션<br/>1인 1이모지 · 24h 이내<br/>누른 사람 목록"]
     Msg --> Mention["멘션<br/>@구성원 · @All<br/>알림 규칙과 연결"]
     System["SYSTEM 메시지<br/>초대 · 퇴장 · 공지 안내"] -.->|"읽음 · 공지 · 리액션 대상 아님"| Msg
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
 ```
 
 이 규칙 각각은 통합 테스트로 고정해 두었습니다. 규칙이 바뀌면 테스트가 먼저 깨집니다.
@@ -286,17 +732,60 @@ flowchart TB
 
 <!-- diagram: presence -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 stateDiagram-v2
     [*] --> Offline
     Offline --> Online : WebSocket 연결<br/>Redis 키 + TTL 저장
-    Online --> Online : Heartbeat<br/>TTL 갱신
-    Online --> Online : 탭 하나 더 열림<br/>연결 수 증가
+    Online --> Online : Heartbeat로 TTL 갱신<br/>탭이 늘면 연결 수만 증가
     Online --> Offline : 마지막 탭 정상 종료<br/>즉시 삭제
     Online --> Offline : 네트워크 끊김 · 강제 종료<br/>TTL 만료
-    note right of Online
-        여러 탭 중 하나만 닫혀도
-        온라인 유지
-    end note
+    Online --> Online : 탭 하나만 닫힘<br/>연결 수 감소 · 온라인 유지
 ```
 
 TTL 때문에 오프라인 감지에는 약간의 지연이 있습니다. "즉시 정확한 상태"가 아니라 "근사한 상태"라고 표현합니다.
@@ -309,6 +798,59 @@ TTL 때문에 오프라인 감지에는 약간의 지연이 있습니다. "즉�
 
 <!-- diagram: scale-out -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart LR
     UA["사용자 A"] --> Nginx["nginx<br/>round-robin · WebSocket upgrade"]
     UB["사용자 B"] --> Nginx
@@ -321,6 +863,11 @@ flowchart LR
     S2 -.->|"로컬 세션에만 전송"| UB
     S1 --> DB[("PostgreSQL")]
     S2 --> DB
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
 ```
 
 Pub/Sub은 저장하지 않습니다. 구독이 끊긴 동안의 이벤트는 사라지므로, 재연결한 화면은 DB에서 다시 조회해 메워야 합니다. 그 한계까지 문서에 남깁니다.
@@ -333,6 +880,58 @@ Pub/Sub은 저장하지 않습니다. 구독이 끊긴 동안의 이벤트는 �
 
 <!-- diagram: reservation -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  sequence:
+    actorMargin: 40
+    messageMargin: 44
+    mirrorActors: false
+    wrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 sequenceDiagram
     participant R1 as 요청 1 (14:00~15:00)
     participant R2 as 요청 2 (14:30~15:30)
@@ -362,6 +961,59 @@ sequenceDiagram
 
 <!-- diagram: observability -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart LR
     subgraph App["Spring Boot"]
         Act["Actuator"]
@@ -374,6 +1026,12 @@ flowchart LR
     Mic --> Act -->|"/actuator/prometheus"| Prom --> Graf
     Load -->|"로그인 · 메시지 · 동시 예약"| App
     Load -.->|"p95 · p99 · 에러율 비교"| Graf
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    class Mic external
 ```
 
 측정하지 않은 수치는 적지 않습니다. 실험은 같은 환경·데이터·부하 조건에서 Before와 After를 비교하고, 한계까지 기록합니다.
@@ -386,6 +1044,59 @@ flowchart LR
 
 <!-- diagram: ai-summary -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart LR
     Req["요약 요청<br/>(방 · 메시지 범위)"] --> Auth{"참여자인가"}
     Auth -->|"아니오"| Deny["403"]
@@ -396,6 +1107,11 @@ flowchart LR
     Call -->|"성공"| Save["결과 저장 · 캐시"] --> Done
     Call -->|"실패 · 429 · 타임아웃"| Fallback["Fallback 안내<br/>채팅 기능은 정상"]
     Rate["Rate Limit<br/>사용자 · 방 단위"] -.-> Call
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
 ```
 
 API 키는 서버 환경변수에만 둡니다. 외부로 나가는 대화 내용은 테스트 데이터 기준으로 다루고, 비용과 토큰 수를 지표로 남깁니다.
@@ -408,6 +1124,59 @@ API 키는 서버 환경변수에만 둡니다. 외부로 나가는 대화 내�
 
 <!-- diagram: packages -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart TB
     Root["com.jhwjhw.naverworkscloneapi"]
     Root --> Common["common<br/>ApiResponse · 예외 핸들러 · JWT 필터"]
@@ -423,6 +1192,11 @@ flowchart TB
     Root --> AI["ai<br/>대화 요약"]
     Chat -.->|"ApplicationEvent"| Notification
     Chat -.->|"AFTER_COMMIT"| Presence
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
 ```
 
 서비스는 ApplicationEvent로 느슨하게 연결합니다. 메시지 서비스가 알림 서비스를 직접 호출하지 않고 이벤트를 던지면, 알림·실시간 발행이 각자 구독해 처리합니다.
@@ -435,6 +1209,53 @@ flowchart TB
 
 <!-- diagram: roadmap -->
 ```mermaid
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 timeline
     title Phase별 개발 순서
     section 기반

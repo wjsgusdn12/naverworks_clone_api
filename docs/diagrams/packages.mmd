@@ -1,3 +1,56 @@
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  flowchart:
+    curve: basis
+    padding: 14
+    nodeSpacing: 36
+    rankSpacing: 48
+    wrappingWidth: 800
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 flowchart TB
     Root["com.jhwjhw.naverworkscloneapi"]
     Root --> Common["common<br/>ApiResponse · 예외 핸들러 · JWT 필터"]
@@ -13,3 +66,8 @@ flowchart TB
     Root --> AI["ai<br/>대화 요약"]
     Chat -.->|"ApplicationEvent"| Notification
     Chat -.->|"AFTER_COMMIT"| Presence
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold
+    classDef store fill:#ecfdf5,stroke:#34d399,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12
+    classDef focus fill:#4f46e5,stroke:#4338ca,color:#ffffff,font-weight:bold

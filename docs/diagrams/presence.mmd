@@ -1,11 +1,54 @@
+---
+config:
+  theme: base
+  fontFamily: "Pretendard, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+  markdownAutoWrap: false
+  themeVariables:
+    fontSize: 14px
+    primaryColor: "#eef2ff"
+    primaryTextColor: "#1e1b4b"
+    primaryBorderColor: "#818cf8"
+    secondaryColor: "#f0f9ff"
+    secondaryBorderColor: "#7dd3fc"
+    tertiaryColor: "#f8fafc"
+    tertiaryBorderColor: "#cbd5e1"
+    lineColor: "#64748b"
+    textColor: "#1e293b"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#cbd5e1"
+    edgeLabelBackground: "#ffffff"
+    nodeBorder: "#818cf8"
+    mainBkg: "#eef2ff"
+    actorBkg: "#eef2ff"
+    actorBorder: "#818cf8"
+    actorTextColor: "#1e1b4b"
+    actorLineColor: "#cbd5e1"
+    signalColor: "#334155"
+    signalTextColor: "#334155"
+    labelBoxBkgColor: "#f1f5f9"
+    labelBoxBorderColor: "#cbd5e1"
+    noteBkgColor: "#fef3c7"
+    noteBorderColor: "#fbbf24"
+    noteTextColor: "#78350f"
+    activationBkgColor: "#e0e7ff"
+    activationBorderColor: "#818cf8"
+    cScale0: "#6366f1"
+    cScale1: "#0ea5e9"
+    cScale2: "#10b981"
+    cScale3: "#f59e0b"
+    cScale4: "#ec4899"
+    cScaleLabel0: "#ffffff"
+    cScaleLabel1: "#ffffff"
+    cScaleLabel2: "#ffffff"
+    cScaleLabel3: "#ffffff"
+    cScaleLabel4: "#ffffff"
+    attributeBackgroundColorEven: "#f8fafc"
+    attributeBackgroundColorOdd: "#ffffff"
+---
 stateDiagram-v2
     [*] --> Offline
     Offline --> Online : WebSocket 연결<br/>Redis 키 + TTL 저장
-    Online --> Online : Heartbeat<br/>TTL 갱신
-    Online --> Online : 탭 하나 더 열림<br/>연결 수 증가
+    Online --> Online : Heartbeat로 TTL 갱신<br/>탭이 늘면 연결 수만 증가
     Online --> Offline : 마지막 탭 정상 종료<br/>즉시 삭제
     Online --> Offline : 네트워크 끊김 · 강제 종료<br/>TTL 만료
-    note right of Online
-        여러 탭 중 하나만 닫혀도
-        온라인 유지
-    end note
+    Online --> Online : 탭 하나만 닫힘<br/>연결 수 감소 · 온라인 유지

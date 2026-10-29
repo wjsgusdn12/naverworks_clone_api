@@ -20,6 +20,11 @@ public record ChatRoomResponse() {
     }
 
     // 채팅방 상세 응답. notices는 최근 등록이 앞(없으면 빈 목록).
+    // 주소록 그룹 상세 패널의 구성원 한 줄. favorite은 요청자 기준 즐겨찾기 여부, owner는 방장 여부.
+    public record GroupMember(Long membershipId, String displayName, String jobTitle, String jobGradeName,
+            String departmentName, String companyName, boolean favorite, boolean owner) {
+    }
+
     public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members,
             List<ReadCursor> readCursors, List<Notice> notices) {
     }

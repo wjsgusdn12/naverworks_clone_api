@@ -18,6 +18,7 @@ import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomNoticeRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomUnreadSummary;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
+import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
 import com.jhwjhw.naverworkscloneapi.notification.domain.NotificationCategory;
@@ -50,6 +51,7 @@ public class ChatRoomService {
     private final ChatMessageReactionRepository reactionRepository;
     private final ChatRoomNoticeRepository noticeRepository;
     private final MembershipRepository membershipRepository;
+    private final MemberFavoriteRepository favoriteRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
 
@@ -144,6 +146,33 @@ public class ChatRoomService {
                             : room.getOwnerMembership().getUserAccount().getDisplayName(),
                     members.size(), joined, requesterId.equals(ownerId), room.getCreatedAt(),
                     lastMessage == null ? null : lastMessage.getCreatedAt());
+        }).toList();
+    }
+
+    // 주소록 그룹 상세: 같은 회사 구성원이면 참여하지 않은 방의 구성원도 볼 수 있음. 프로필·즐겨찾기 모두 쿼리 한 번씩.
+    @Transactional(readOnly = true)
+    public List<ChatRoomResponse.GroupMember> groupMembers(Long requesterId, Long roomId) {
+        Membership requester = activeMembership(requesterId);
+        ChatRoom room = roomRepository.findById(roomId)
+                .filter(candidate -> candidate.getRoomType() == ChatRoomType.GROUP && candidate.getEndedAt() == null)
+                .orElseThrow(() -> new ChatException("CHAT_ROOM_NOT_FOUND", "채팅방을 찾을 수 없습니다."));
+        if (!room.getCompany().getId().equals(requester.getCompany().getId())) {
+            throw new ChatException("CHAT_ROOM_ACCESS_DENIED", "다른 회사의 그룹은 볼 수 없습니다.");
+        }
+        List<ChatRoomMember> members = memberRepository.findActiveWithProfileByChatRoomId(roomId);
+        Set<Long> favoriteIds = favoriteRepository.findByOwnerMembershipIdAndTargetMembershipIdIn(requesterId,
+                members.stream().map(member -> member.getMembership().getId()).toList()).stream()
+                .map(favorite -> favorite.getTargetMembership().getId())
+                .collect(Collectors.toSet());
+        Long ownerId = room.getOwnerMembership() == null ? null : room.getOwnerMembership().getId();
+        return members.stream().map(member -> {
+            Membership membership = member.getMembership();
+            return new ChatRoomResponse.GroupMember(membership.getId(), membership.getUserAccount().getDisplayName(),
+                    membership.getJobTitle(),
+                    membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
+                    membership.getDepartment() == null ? null : membership.getDepartment().getName(),
+                    membership.getCompany().getName(), favoriteIds.contains(membership.getId()),
+                    membership.getId().equals(ownerId));
         }).toList();
     }
 

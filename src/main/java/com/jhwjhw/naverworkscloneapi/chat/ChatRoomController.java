@@ -32,6 +32,14 @@ public class ChatRoomController {
         service.groupRooms(id(jwt)));
   }
 
+  // 주소록 그룹 상세 패널: 그룹 채팅방 구성원 목록(즐겨찾기·방장 여부 포함).
+  @GetMapping("/group/members")
+  public ApiResponse<List<ChatRoomResponse.GroupMember>> groupMembers(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId) {
+    return ApiResponse.success("CHAT_GROUP_MEMBER_FOUND", "그룹 구성원 목록을 조회했습니다.",
+        service.groupMembers(id(jwt), chatRoomId));
+  }
+
   // 채팅방 상세 조회
   @GetMapping("/detail")
   public ApiResponse<ChatRoomResponse.Detail> detail(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {

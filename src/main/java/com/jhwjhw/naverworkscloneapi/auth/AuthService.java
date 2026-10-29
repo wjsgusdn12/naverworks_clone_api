@@ -153,9 +153,17 @@ public class AuthService {
                         .toList(),
                 jobGradeRepository.findByCompanyIdOrderBySortOrderAsc(demo.getId()).stream()
                         .filter(JobGrade::isEnabled)
+                        // "대표"는 새 회사를 만든 사람만 가질 수 있어 선택지에서 뺌.
+                        .filter(grade -> !OWNER_GRADE_NAME.equals(grade.getName()))
                         .map(grade -> new SignupResponse.Option(grade.getId(), grade.getName()))
                         .toList());
     }
+
+    // 새 회사를 만든 사람만 가질 수 있는 직급. 가입·회사 옮기기에서 직접 고를 수 없음.
+    private static final String OWNER_GRADE_NAME = "대표";
+    // 아무 선택도 없을 때 쓰는 기본 부서·직급 이름.
+    private static final String DEFAULT_DEPARTMENT_NAME = "경영팀";
+    private static final String DEFAULT_GRADE_NAME = "사원";
 
     // 공개 가입. 체험 회사 참여 / 새 회사 만들기(대표) / 초대 코드 참여 중 하나로 소속을 정하고 바로 로그인 세션을 발급.
     @Transactional
@@ -206,21 +214,25 @@ public class AuthService {
         };
     }
 
-    // 체험 회사 참여. 부서·직급은 체험 회사 것만 허용.
+    // 체험 회사 참여. 부서·직급은 체험 회사 것만 허용하고, 고르지 않으면 기본값(첫 부서·사원)을 넣음.
     private Placement demoPlacement(Long departmentId, Long jobGradeId) {
         Company demo = demoCompany();
-        Department department = departmentId == null ? null
+        Department department = departmentId == null ? defaultDepartment(demo)
                 : departmentRepository.findById(departmentId)
                         .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
                         .orElseThrow(() -> new AuthException("AUTH_DEPARTMENT_INVALID", "선택한 부서를 찾을 수 없습니다."));
-        JobGrade jobGrade = jobGradeId == null ? null
+        JobGrade jobGrade = jobGradeId == null ? defaultJobGrade(demo)
                 : jobGradeRepository.findById(jobGradeId)
                         .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
                         .orElseThrow(() -> new AuthException("AUTH_JOB_GRADE_INVALID", "선택한 직급을 찾을 수 없습니다."));
+        if (OWNER_GRADE_NAME.equals(jobGrade.getName())) {
+            // 대표는 새 회사를 직접 만든 사람만 될 수 있음.
+            throw new AuthException("AUTH_JOB_GRADE_INVALID", "대표 직급은 새 회사를 만들 때만 가질 수 있습니다.");
+        }
         return new Placement(demo, department, jobGrade, null, Role.USER);
     }
 
-    // 새 회사 만들기. 만든 사람이 관리자이자 "대표" 직급·직책을 가짐. 기본 부서 하나를 함께 생성.
+    // 새 회사 만들기. 만든 사람이 관리자이자 "대표" 직급·직책을 가짐. 기본 부서(경영팀)와 직급(대표·사원)을 함께 생성.
     private Placement newCompanyPlacement(String companyName) {
         String name = companyName == null ? "" : companyName.trim();
         if (name.isEmpty()) {
@@ -230,18 +242,40 @@ public class AuthService {
             throw new AuthException("AUTH_COMPANY_NAME_TAKEN", "이미 있는 회사 이름입니다.");
         }
         Company company = companyRepository.save(new Company(name));
-        Department department = departmentRepository.save(new Department(company, "경영지원"));
-        JobGrade owner = jobGradeRepository.save(new JobGrade(company, "대표", 1));
-        jobGradeRepository.save(new JobGrade(company, "사원", 2));
-        return new Placement(company, department, owner, "대표", Role.ADMIN);
+        Department department = departmentRepository.save(new Department(company, DEFAULT_DEPARTMENT_NAME));
+        JobGrade owner = jobGradeRepository.save(new JobGrade(company, OWNER_GRADE_NAME, 1));
+        jobGradeRepository.save(new JobGrade(company, DEFAULT_GRADE_NAME, 2));
+        return new Placement(company, department, owner, OWNER_GRADE_NAME, Role.ADMIN);
     }
 
-    // 초대 코드로 참여. 코드는 관리자가 발급한 것만 유효.
+    // 초대 코드로 참여. 코드는 관리자가 발급한 것만 유효. 소속은 그 회사의 기본 부서·사원으로 시작.
     private Placement invitePlacement(String inviteCode) {
         String code = inviteCode == null ? "" : inviteCode.trim().toUpperCase(Locale.ROOT);
         Company company = companyRepository.findByInviteCode(code)
                 .orElseThrow(() -> new AuthException("AUTH_INVITE_CODE_INVALID", "초대 코드가 올바르지 않습니다."));
-        return new Placement(company, null, null, null, Role.USER);
+        return new Placement(company, defaultDepartment(company), defaultJobGrade(company), null, Role.USER);
+    }
+
+    // 기본 부서: 이름순 첫 부서. 하나도 없으면 "경영팀"을 만들어 줌.
+    private Department defaultDepartment(Company company) {
+        return departmentRepository.findByCompanyIdOrderByNameAsc(company.getId()).stream()
+                .filter(Department::isEnabled)
+                .findFirst()
+                .orElseGet(() -> departmentRepository.save(new Department(company, DEFAULT_DEPARTMENT_NAME)));
+    }
+
+    // 기본 직급: "사원"이 있으면 그것, 없으면 대표를 뺀 첫 직급. 그마저 없으면 "사원"을 만들어 줌.
+    private JobGrade defaultJobGrade(Company company) {
+        var grades = jobGradeRepository.findByCompanyIdOrderBySortOrderAsc(company.getId()).stream()
+                .filter(JobGrade::isEnabled)
+                .filter(grade -> !OWNER_GRADE_NAME.equals(grade.getName()))
+                .toList();
+        return grades.stream()
+                .filter(grade -> DEFAULT_GRADE_NAME.equals(grade.getName()))
+                .findFirst()
+                .or(() -> grades.stream().findFirst())
+                .orElseGet(() -> jobGradeRepository.save(new JobGrade(company, DEFAULT_GRADE_NAME,
+                        jobGradeRepository.findByCompanyIdOrderBySortOrderAsc(company.getId()).size() + 1)));
     }
 
     // 회사 옮기기. 이전 회사의 채팅방·즐겨찾기·주소록 그룹을 모두 정리한 뒤 소속을 바꾸고, 회사 ID가 든 토큰을 새로 발급.
@@ -300,11 +334,25 @@ public class AuthService {
         return new SignupResponse.InviteCode(company.getName(), company.getInviteCode());
     }
 
-    // 계정 찾기 1단계: 아이디(또는 이메일)와 복구 코드가 함께 맞으면 계정을 알려 줌.
+    // 계정 찾기 1단계: 복구 코드가 있으면 코드로, 없으면 아이디(또는 이메일)로 계정을 확인.
+    // 아이디로만 찾았을 때는 가린 아이디와 이름만 알려 주고(아이디 찾기), 비밀번호 재설정은 복구 코드가 있어야 함.
     @Transactional(readOnly = true)
     public SignupResponse.RecoverLookup recoverLookup(String loginId, String recoveryCode) {
-        UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
-        return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName());
+        if (recoveryCode != null && !recoveryCode.isBlank()) {
+            UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
+            return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()),
+                    userAccount.getDisplayName(), true);
+        }
+        if (loginId == null || loginId.isBlank()) {
+            throw new AuthException("AUTH_RECOVER_INPUT_REQUIRED", "아이디(또는 이메일)나 복구 코드를 입력해 주세요.");
+        }
+        String identifier = normalizeEmail(loginId);
+        UserAccount userAccount = userAccountRepository.findByLoginId(identifier)
+                .or(() -> userAccountRepository.findByEmail(identifier))
+                .filter(UserAccount::isEnabled)
+                .orElseThrow(() -> new AuthException("AUTH_ACCOUNT_NOT_FOUND", "해당 아이디 또는 이메일로 가입한 계정이 없습니다."));
+        return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName(),
+                false);
     }
 
     // 계정 찾기 2단계: 비밀번호를 바꾸고 기존 로그인을 모두 끊은 뒤, 쓴 복구 코드는 버리고 새 코드를 발급.
@@ -325,15 +373,14 @@ public class AuthService {
         return new SignupResponse.RecoveryCode(nextCode);
     }
 
-    // 아이디(또는 이메일)로 계정을 찾고 복구 코드 해시까지 맞아야 통과. 어느 쪽이 틀렸는지는 알려 주지 않음.
+    // 복구 코드 해시로 계정을 찾음. 아이디(또는 이메일)를 함께 보냈다면 그 계정과 같아야 통과. 어느 쪽이 틀렸는지는 알려 주지 않음.
     private UserAccount accountByRecoveryCode(String loginId, String recoveryCode) {
-        String identifier = normalizeEmail(loginId == null ? "" : loginId);
         String normalizedCode = recoveryCode == null ? "" : recoveryCode.trim().toUpperCase(Locale.ROOT);
-        String codeHash = hashToken(normalizedCode);
-        return userAccountRepository.findByLoginId(identifier)
-                .or(() -> userAccountRepository.findByEmail(identifier))
+        String identifier = loginId == null || loginId.isBlank() ? null : normalizeEmail(loginId);
+        return userAccountRepository.findByRecoveryCodeHash(hashToken(normalizedCode))
                 .filter(UserAccount::isEnabled)
-                .filter(account -> codeHash.equals(account.getRecoveryCodeHash()))
+                .filter(account -> identifier == null || identifier.equals(account.getLoginId())
+                        || identifier.equals(account.getEmail()))
                 .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "아이디 또는 복구 코드가 올바르지 않습니다."));
     }
 

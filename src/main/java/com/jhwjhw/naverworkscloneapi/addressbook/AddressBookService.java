@@ -49,6 +49,8 @@ public class AddressBookService {
     private static final int SUGGESTION_PAGE_SIZE = 50;
     private static final int MAX_SEARCH_HISTORY_SIZE = 10;
     private static final int MAX_AWAY_HOURS = 168;
+    // 종료 시각을 직접 고를 때의 상한.
+    private static final Duration MAX_AWAY_DURATION = Duration.ofDays(90);
 
     private final MembershipRepository membershipRepository;
     private final CompanyRepository companyRepository;
@@ -248,6 +250,16 @@ public class AddressBookService {
         Membership requester = findMembership(requesterMembershipId);
         if (request.status() == PresenceStatus.ONLINE) {
             requester.setAwayUntil(null);
+        } else if (request.awayUntil() != null) {
+            // 직접 고른 종료 시각. 지금 이후여야 하고 너무 멀면(90일 초과) 거부.
+            Instant now = Instant.now();
+            if (!request.awayUntil().isAfter(now) || request.awayUntil().isAfter(now.plus(MAX_AWAY_DURATION))) {
+                throw new AddressBookException("ADDRESS_BOOK_AWAY_UNTIL_INVALID",
+                        "부재중 종료 시각은 지금 이후, 90일 이내로 설정해 주세요.");
+            }
+            requester.setAwayUntil(request.awayUntil());
+            log.info("Address book presence updated. membershipId={}, status=AWAY, awayUntil={}",
+                    requesterMembershipId, request.awayUntil());
         } else {
             int awayHours = request.awayHours() == null ? 0 : request.awayHours();
             if (awayHours < 1 || awayHours > MAX_AWAY_HOURS) {

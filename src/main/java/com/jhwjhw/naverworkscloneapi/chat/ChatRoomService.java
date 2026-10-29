@@ -22,6 +22,8 @@ import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepositor
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
 import com.jhwjhw.naverworkscloneapi.notification.domain.NotificationCategory;
+import com.jhwjhw.naverworkscloneapi.addressbook.AddressBookResponse;
+import com.jhwjhw.naverworkscloneapi.presence.PresenceService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
@@ -54,6 +56,8 @@ public class ChatRoomService {
     private final MemberFavoriteRepository favoriteRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
+    // 주소록 그룹 구성원의 접속 상태를 아바타 배지에 싣기 위해 사용.
+    private final PresenceService presenceService;
 
     @Transactional
     public ChatRoomResponse.Room createDirect(Long requesterId, Long targetId) {
@@ -172,8 +176,18 @@ public class ChatRoomService {
                     membership.getJobGrade() == null ? null : membership.getJobGrade().getName(),
                     membership.getDepartment() == null ? null : membership.getDepartment().getName(),
                     membership.getCompany().getName(), favoriteIds.contains(membership.getId()),
-                    membership.getId().equals(ownerId));
+                    membership.getId().equals(ownerId), presenceOf(membership),
+                    membership.currentStatusType(), membership.currentStatusUntil());
         }).toList();
+    }
+
+    // 접속 상태. 주소록과 같은 기준(비활성 계정 → INACTIVE, 연결 중 → ONLINE).
+    private AddressBookResponse.MemberPresenceStatus presenceOf(Membership membership) {
+        if (!membership.getUserAccount().isEnabled()) {
+            return AddressBookResponse.MemberPresenceStatus.INACTIVE;
+        }
+        return presenceService.isOnline(membership.getId()) ? AddressBookResponse.MemberPresenceStatus.ONLINE
+                : AddressBookResponse.MemberPresenceStatus.OFFLINE;
     }
 
     @Transactional(readOnly = true)

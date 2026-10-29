@@ -14,9 +14,9 @@ public record ChatRoomResponse() {
             boolean lastMessageMentioned, Long lastMessageId, long lastMessageVersion) {
     }
 
-    // 채팅방 상세 응답. notice는 공지가 없으면 null.
+    // 채팅방 상세 응답. notices는 최근 등록이 앞(없으면 빈 목록).
     public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members,
-            List<ReadCursor> readCursors, Notice notice) {
+            List<ReadCursor> readCursors, List<Notice> notices) {
     }
 
     // 방 상단에 고정하는 공지. 원문 메시지 위치와 내용, 등록한 사람.

@@ -141,19 +141,20 @@ public class ChatRoomController {
         service.forwardMessage(id(jwt), chatRoomId, messageId, r.targetChatRoomIds()));
   }
 
-  // 공지 등록(기존 공지는 교체).
+  // 공지 등록. 방의 공지 목록(최근 등록이 앞)을 돌려줌.
   @PostMapping("/notice/update")
-  public ApiResponse<ChatRoomResponse.Notice> updateNotice(@AuthenticationPrincipal Jwt jwt,
+  public ApiResponse<List<ChatRoomResponse.Notice>> updateNotice(@AuthenticationPrincipal Jwt jwt,
       @RequestParam Long chatRoomId, @RequestParam Long messageId) {
     return ApiResponse.success("CHAT_NOTICE_UPDATED", "공지를 등록했습니다.",
         service.updateNotice(id(jwt), chatRoomId, messageId));
   }
 
-  // 공지 해제.
+  // 공지 내리기(모든 참여자에게서 사라짐). 남은 공지 목록을 돌려줌.
   @PostMapping("/notice/remove")
-  public ApiResponse<Void> removeNotice(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
-    service.removeNotice(id(jwt), chatRoomId);
-    return ApiResponse.success("CHAT_NOTICE_REMOVED", "공지를 해제했습니다.", null);
+  public ApiResponse<List<ChatRoomResponse.Notice>> removeNotice(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId) {
+    return ApiResponse.success("CHAT_NOTICE_REMOVED", "공지를 내렸습니다.",
+        service.removeNotice(id(jwt), chatRoomId, messageId));
   }
 
   // 리액션 추가. 이미 눌렀으면 그대로 성공(멱등).

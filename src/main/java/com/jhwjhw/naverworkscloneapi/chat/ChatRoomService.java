@@ -6,12 +6,14 @@ import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageType;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatNotificationMode;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoom;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomNotice;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomMemberRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomNoticeRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomUnreadSummary;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
@@ -45,6 +47,7 @@ public class ChatRoomService {
     private final ChatRoomMemberRepository memberRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatMessageReactionRepository reactionRepository;
+    private final ChatRoomNoticeRepository noticeRepository;
     private final MembershipRepository membershipRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
@@ -147,25 +150,23 @@ public class ChatRoomService {
                         .map(member -> new ChatRoomResponse.ReadCursor(member.getMembership().getId(),
                                 member.getLastReadMessageId()))
                         .toList(),
-                notice(room));
+                notices(roomId));
     }
 
-    // 방 공지 응답. 공지 메시지가 삭제됐으면 없는 것으로 취급.
-    private ChatRoomResponse.Notice notice(ChatRoom room) {
-        if (room.getNoticeMessageId() == null) return null;
-        ChatMessage message = messageRepository.findById(room.getNoticeMessageId()).orElse(null);
-        if (message == null || message.getDeletedAt() != null) return null;
-        String setByName = room.getNoticeSetByMembershipId() == null ? null
-                : membershipRepository.findById(room.getNoticeSetByMembershipId())
-                        .map(membership -> membership.getUserAccount().getDisplayName()).orElse(null);
-        return new ChatRoomResponse.Notice(message.getId(),
-                message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
-                room.getNoticeSetByMembershipId(), setByName, room.getNoticeSetAt());
+    // 방 공지 목록(최근 등록이 앞). 원문이 삭제된 공지는 제외.
+    private List<ChatRoomResponse.Notice> notices(Long roomId) {
+        return noticeRepository.findByChatRoomIdAndRemovedAtIsNullOrderByCreatedAtDesc(roomId).stream()
+                .filter(notice -> notice.getChatMessage().getDeletedAt() == null)
+                .map(notice -> new ChatRoomResponse.Notice(notice.getChatMessage().getId(),
+                        notice.getChatMessage().getSenderMembership().getUserAccount().getDisplayName(),
+                        notice.getChatMessage().getContent(), notice.getSetByMembership().getId(),
+                        notice.getSetByMembership().getUserAccount().getDisplayName(), notice.getCreatedAt()))
+                .toList();
     }
 
-    // 공지 등록. 모든 참여자가 등록할 수 있고, 기존 공지는 교체됨.
+    // 공지 등록. 모든 참여자가 등록할 수 있고, 방당 여러 개를 둘 수 있음. 이미 공지인 메시지면 그대로 목록만 반환.
     @Transactional
-    public ChatRoomResponse.Notice updateNotice(Long requesterId, Long roomId, Long messageId) {
+    public List<ChatRoomResponse.Notice> updateNotice(Long requesterId, Long roomId, Long messageId) {
         ChatRoomMember requester = active(roomId, requesterId);
         ChatRoom room = requester.getChatRoom();
         ChatMessage message = requireRoomMessage(roomId, messageId);
@@ -173,26 +174,36 @@ public class ChatRoomService {
         if (message.getMessageType() != ChatMessageType.TEXT) {
             throw new ChatException("CHAT_NOTICE_NOT_ALLOWED", "시스템 안내는 공지로 등록할 수 없습니다.");
         }
-        room.updateNotice(messageId, requesterId);
+        if (noticeRepository.findByChatRoomIdAndChatMessageIdAndRemovedAtIsNull(roomId, messageId).isPresent()) {
+            return notices(roomId);
+        }
+        if (noticeRepository.countByChatRoomIdAndRemovedAtIsNull(roomId) >= ChatRoomNotice.MAX_PER_ROOM) {
+            throw new ChatException("CHAT_NOTICE_LIMIT_EXCEEDED",
+                    "공지는 방당 " + ChatRoomNotice.MAX_PER_ROOM + "개까지 등록할 수 있습니다.");
+        }
+        noticeRepository.save(new ChatRoomNotice(room, message, requester.getMembership()));
         systemMessage(room, requester.getMembership(),
                 requester.getMembership().getUserAccount().getDisplayName() + "님이 공지를 등록했습니다.");
-        ChatRoomResponse.Notice notice = notice(room);
-        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notice));
+        List<ChatRoomResponse.Notice> notices = notices(roomId);
+        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notices));
         log.info("Chat notice updated. roomId={}, messageId={}, requesterId={}", roomId, messageId, requesterId);
-        return notice;
+        return notices;
     }
 
-    // 공지 해제. 이미 없으면 아무것도 바꾸지 않음(재시도에 안전).
+    // 공지 내리기(모든 참여자에게서 사라짐). 이미 없으면 목록만 돌려줌(재시도에 안전).
     @Transactional
-    public void removeNotice(Long requesterId, Long roomId) {
+    public List<ChatRoomResponse.Notice> removeNotice(Long requesterId, Long roomId, Long messageId) {
         ChatRoomMember requester = active(roomId, requesterId);
-        ChatRoom room = requester.getChatRoom();
-        if (room.getNoticeMessageId() == null) return;
-        room.clearNotice();
-        systemMessage(room, requester.getMembership(),
-                requester.getMembership().getUserAccount().getDisplayName() + "님이 공지를 해제했습니다.");
-        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, null));
-        log.info("Chat notice removed. roomId={}, requesterId={}", roomId, requesterId);
+        ChatRoomNotice notice = noticeRepository.findByChatRoomIdAndChatMessageIdAndRemovedAtIsNull(roomId, messageId)
+                .orElse(null);
+        if (notice == null) return notices(roomId);
+        notice.remove();
+        systemMessage(requester.getChatRoom(), requester.getMembership(),
+                requester.getMembership().getUserAccount().getDisplayName() + "님이 공지를 내렸습니다.");
+        List<ChatRoomResponse.Notice> notices = notices(roomId);
+        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notices));
+        log.info("Chat notice removed. roomId={}, messageId={}, requesterId={}", roomId, messageId, requesterId);
+        return notices;
     }
 
     // 메시지 전달. 선택한 방마다 같은 내용의 새 메시지를 보냄(멘션·답장은 복사하지 않음).
@@ -390,11 +401,10 @@ public class ChatRoomService {
         requireMessageVersion(message, expectedVersion);
         message.deleteContent();
         // 공지로 걸린 메시지를 지우면 공지도 함께 내림.
-        ChatRoom room = message.getChatRoom();
-        if (messageId.equals(room.getNoticeMessageId())) {
-            room.clearNotice();
-            eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, null));
-        }
+        noticeRepository.findByChatRoomIdAndChatMessageIdAndRemovedAtIsNull(roomId, messageId).ifPresent(notice -> {
+            notice.remove();
+            eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notices(roomId)));
+        });
         return publishMessageChange("MESSAGE_DELETED", requesterId, roomId, message);
     }
 

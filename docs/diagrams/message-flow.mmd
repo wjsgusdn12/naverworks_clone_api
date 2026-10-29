@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant A as 보낸 사람 화면
+    participant API as API (api-1)
+    participant DB as PostgreSQL
+    participant R as Redis Pub/Sub
+    participant API2 as API (api-2)
+    participant B as 받는 사람 화면
+
+    A->>API: POST /chatRoom/message
+    API->>DB: 메시지 저장 · 보낸 사람 읽음 커서 전진
+    API->>DB: 알림 생성 (방 설정 · 멘션 규칙)
+    DB-->>API: commit
+    Note over API: AFTER_COMMIT 이벤트
+    API-->>A: 응답 (메시지 · 읽음 수)
+    API->>R: publish MESSAGE_CREATED
+    R-->>API: 자기 세션에 전달
+    R-->>API2: 다른 서버 세션에 전달
+    API-->>B: /topic/chatRoom/{id}
+    API2-->>B: /topic/chatRoom/{id}

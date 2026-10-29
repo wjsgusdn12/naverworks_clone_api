@@ -1,0 +1,92 @@
+[
+  {
+    "id": "architecture",
+    "title": "1. 전체 구조",
+    "description": "브라우저는 Next.js 화면과 대화하고, 화면은 REST와 WebSocket 두 통로로 이 서버와 대화합니다. 메시지·예약처럼 남아야 하는 데이터는 PostgreSQL에, 실시간 전파와 접속 상태처럼 흘러가는 데이터는 Redis에 둡니다.\nDB가 진실의 원천이고 Redis는 전달 수단입니다. Redis가 비워져도 대화 기록은 사라지지 않습니다.",
+    "svg": "docs/diagrams/architecture.svg"
+  },
+  {
+    "id": "deployment",
+    "title": "2. 배포 구조",
+    "description": "비용 0원을 원칙으로 잡았습니다. 상시 가동이 필요한 서버 묶음은 Oracle 무료 VM 한 대에 docker-compose로 올리고, 프론트와 DB는 관리형 무료 서비스를 씁니다.\nnginx가 인증서와 WebSocket 업그레이드를 맡고, 같은 이미지로 뜬 api 두 대 사이는 Redis가 이어 줍니다. Supabase의 7일 무활동 정지는 서버의 일일 keep-alive와 GitHub Actions 스케줄로 막습니다.",
+    "svg": "docs/diagrams/deployment.svg"
+  },
+  {
+    "id": "domain-map",
+    "title": "3. 도메인 지도",
+    "description": "메신저가 중심이고, 조직·인증과 일정·예약이 나머지 두 축입니다. 운영 관점의 관측성과 AI 요약은 그 위에 얹는 층입니다.\n프로젝트·태스크 관리, MSA, Kafka, Kubernetes는 의도적으로 범위에서 뺐습니다. 문제가 재현되기 전에는 도입하지 않습니다.",
+    "svg": "docs/diagrams/domain-map.svg"
+  },
+  {
+    "id": "erd",
+    "title": "4. 데이터 모델",
+    "description": "회사 → 부서 → 구성원의 조직 계층이 모든 데이터의 울타리입니다. 메시지는 채팅방에, 읽음 위치는 참여자 행에, 부가 정보(멘션·리액션·공지)는 별도 테이블에 둡니다.\n삭제는 전부 논리 삭제입니다. 스키마는 Flyway 마이그레이션으로 코드와 같은 이력 안에서 바뀝니다.",
+    "svg": "docs/diagrams/erd.svg"
+  },
+  {
+    "id": "auth-flow",
+    "title": "5. 인증과 세션",
+    "description": "Access Token은 3시간, Refresh Token은 최초 로그인 기준 최대 7일입니다. Refresh는 회전하지만 세션의 절대 만료 시각은 늘어나지 않아, 한 번 로그인하면 7일 뒤에는 반드시 다시 로그인합니다.\n토큰 원문은 DB에 남기지 않고 해시만 저장합니다. 화면의 메뉴 숨김은 UX일 뿐이고, 권한 판단은 항상 서버의 `ROLE_USER` · `ROLE_ADMIN` 검사가 근거입니다.",
+    "svg": "docs/diagrams/auth-flow.svg"
+  },
+  {
+    "id": "message-flow",
+    "title": "6. 메시지 전송과 실시간 전파",
+    "description": "메시지는 먼저 DB에 저장되고, 트랜잭션이 커밋된 뒤에만 실시간 이벤트가 나갑니다. 그래서 받는 쪽이 이벤트를 보고 조회해도 데이터가 없는 경우가 생기지 않습니다.\n한 대로 돌 때는 Redis 없이 서버 안 브로커가 같은 역할을 합니다. 이벤트 종류는 MESSAGE_CREATED · UPDATED · DELETED · REACTION_UPDATED · NOTICE_UPDATED · READ_UPDATED · TYPING_CHANGED입니다.",
+    "svg": "docs/diagrams/message-flow.svg"
+  },
+  {
+    "id": "read-cursor",
+    "title": "7. 읽음 수 계산",
+    "description": "메시지마다 \"누가 읽었는지\"를 저장하지 않습니다. 참여자마다 마지막으로 읽은 메시지 ID 하나만 두고, 읽음 수는 그 커서들로 계산합니다. 저장은 가볍고 계산은 쿼리 한 번입니다.\n화면도 같은 규칙으로 계산합니다. 서버가 보내는 READ_UPDATED 이벤트는 \"누가 어디까지\"만 담고, 말풍선의 숫자는 화면이 커서로 다시 셉니다. 이벤트 순서가 뒤바뀌어도 숫자가 어긋나지 않습니다.",
+    "svg": "docs/diagrams/read-cursor.svg"
+  },
+  {
+    "id": "message-rules",
+    "title": "8. 메시지 확장 기능 규칙",
+    "description": "답장·수정·삭제·전달·공지·리액션은 모두 같은 원칙을 따릅니다. 원본은 보존하고, 시간 제한은 24시간, 권한은 서버가 확인합니다.\n이 규칙 각각은 통합 테스트로 고정해 두었습니다. 규칙이 바뀌면 테스트가 먼저 깨집니다.",
+    "svg": "docs/diagrams/message-rules.svg"
+  },
+  {
+    "id": "presence",
+    "title": "9. 접속 상태 (Presence)",
+    "description": "온라인 여부는 서버 메모리가 아니라 Redis의 TTL 키로 판단합니다. 비정상 종료로 disconnect가 오지 않아도 TTL이 만료되면 저절로 오프라인이 됩니다.\nTTL 때문에 오프라인 감지에는 약간의 지연이 있습니다. \"즉시 정확한 상태\"가 아니라 \"근사한 상태\"라고 표현합니다.",
+    "svg": "docs/diagrams/presence.svg"
+  },
+  {
+    "id": "scale-out",
+    "title": "10. 서버 2대와 Scale-out",
+    "description": "같은 코드로 인스턴스 2개를 띄우고 nginx가 나눠 받습니다. 서버 메모리 안 브로커만 쓰면 다른 서버에 붙은 사용자에게 이벤트가 가지 않는다는 한계를 재현한 뒤, Redis Pub/Sub으로 잇습니다.\nPub/Sub은 저장하지 않습니다. 구독이 끊긴 동안의 이벤트는 사라지므로, 재연결한 화면은 DB에서 다시 조회해 메워야 합니다. 그 한계까지 문서에 남깁니다.",
+    "svg": "docs/diagrams/scale-out.svg"
+  },
+  {
+    "id": "reservation",
+    "title": "11. 회의실 예약과 동시성",
+    "description": "같은 회의실의 시간이 겹치는 예약은 허용하지 않습니다. 구간은 `[start, end)`로 해석하고, 겹침은 `기존 시작 < 새 종료 AND 기존 종료 > 새 시작`으로 판정합니다.\n`@Transactional`만으로는 직렬화되지 않는다는 것을 동시 요청 100건으로 재현하고, 비관적 락·낙관적 락·DB 제약을 같은 조건에서 비교해 중복 0건을 확인하는 것이 이 단계의 목표입니다.",
+    "svg": "docs/diagrams/reservation.svg"
+  },
+  {
+    "id": "observability",
+    "title": "12. 관측성",
+    "description": "운영 지표(서버 상태)와 서비스 통계(관리자 대시보드)를 분리합니다. 서버 상태는 Grafana에서 보고, 서비스 활동은 앱 안의 관리자 화면에서 봅니다.\n측정하지 않은 수치는 적지 않습니다. 실험은 같은 환경·데이터·부하 조건에서 Before와 After를 비교하고, 한계까지 기록합니다.",
+    "svg": "docs/diagrams/observability.svg"
+  },
+  {
+    "id": "ai-summary",
+    "title": "13. AI 대화 요약",
+    "description": "채팅방 참여자만 자기 방의 메시지 범위를 요약할 수 있습니다. 외부 LLM이 느리거나 실패해도 채팅 자체는 영향을 받지 않도록 격리합니다.\nAPI 키는 서버 환경변수에만 둡니다. 외부로 나가는 대화 내용은 테스트 데이터 기준으로 다루고, 비용과 토큰 수를 지표로 남깁니다.",
+    "svg": "docs/diagrams/ai-summary.svg"
+  },
+  {
+    "id": "packages",
+    "title": "14. 패키지 구조",
+    "description": "도메인별 패키지 안에 컨트롤러·서비스·도메인·리포지토리를 함께 둡니다. 공통 응답·예외·보안은 `common`, 설정은 `config`에 모읍니다.\n서비스는 ApplicationEvent로 느슨하게 연결합니다. 메시지 서비스가 알림 서비스를 직접 호출하지 않고 이벤트를 던지면, 알림·실시간 발행이 각자 구독해 처리합니다.",
+    "svg": "docs/diagrams/packages.svg"
+  },
+  {
+    "id": "roadmap",
+    "title": "15. 개발 로드맵",
+    "description": "짧은 수직 슬라이스(화면 ↔ API ↔ DB ↔ 테스트) 단위로 한 단계를 끝내고 다음으로 갑니다.",
+    "svg": "docs/diagrams/roadmap.svg"
+  }
+]

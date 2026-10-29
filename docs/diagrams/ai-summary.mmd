@@ -1,0 +1,10 @@
+flowchart LR
+    Req["요약 요청<br/>(방 · 메시지 범위)"] --> Auth{"참여자인가"}
+    Auth -->|"아니오"| Deny["403"]
+    Auth -->|"예"| Cache{"같은 범위<br/>캐시 있음"}
+    Cache -->|"예"| Done["요약 반환"]
+    Cache -->|"아니오"| Fetch["DB에서 메시지 조회"]
+    Fetch --> Call["LLM 호출<br/>Timeout · 제한된 Retry"]
+    Call -->|"성공"| Save["결과 저장 · 캐시"] --> Done
+    Call -->|"실패 · 429 · 타임아웃"| Fallback["Fallback 안내<br/>채팅 기능은 정상"]
+    Rate["Rate Limit<br/>사용자 · 방 단위"] -.-> Call

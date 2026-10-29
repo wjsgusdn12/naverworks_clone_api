@@ -1,0 +1,26 @@
+flowchart TB
+    User["사용자"]
+    subgraph Vercel["Vercel (무료)"]
+        Next["Next.js"]
+    end
+    subgraph VM["Oracle Cloud VM (Always Free) · docker-compose"]
+        Nginx["nginx<br/>TLS · 라우팅 · 분배"]
+        API1["api-1"]
+        API2["api-2"]
+        RedisC[("redis")]
+        Nginx --> API1
+        Nginx --> API2
+        API1 <-.-> RedisC
+        API2 <-.-> RedisC
+    end
+    Supa[("Supabase PostgreSQL<br/>(무료)")]
+    DNS["DuckDNS<br/>무료 서브도메인 2개"]
+    GH["GitHub Actions → GHCR"]
+
+    User --> DNS
+    DNS --> Next
+    DNS --> Nginx
+    Next -->|"REST · WebSocket"| Nginx
+    API1 --> Supa
+    API2 --> Supa
+    GH -.->|"이미지 pull"| VM

@@ -1,0 +1,12 @@
+flowchart LR
+    UA["사용자 A"] --> Nginx["nginx<br/>round-robin · WebSocket upgrade"]
+    UB["사용자 B"] --> Nginx
+    Nginx --> S1["api-1<br/>A의 세션"]
+    Nginx --> S2["api-2<br/>B의 세션"]
+    S1 -->|"publish"| Redis[("Redis<br/>채널: chat-events")]
+    Redis -->|"subscribe"| S1
+    Redis -->|"subscribe"| S2
+    S1 -.->|"로컬 세션에만 전송"| UA
+    S2 -.->|"로컬 세션에만 전송"| UB
+    S1 --> DB[("PostgreSQL")]
+    S2 --> DB

@@ -1,0 +1,12 @@
+flowchart LR
+    subgraph App["Spring Boot"]
+        Act["Actuator"]
+        Mic["Micrometer<br/>HTTP · JVM · HikariCP<br/>Redis · WebSocket · LLM"]
+    end
+    Prom["Prometheus<br/>스크레이프 · 저장"]
+    Graf["Grafana<br/>대시보드 · 알림"]
+    Load["k6 부하 테스트"]
+
+    Mic --> Act -->|"/actuator/prometheus"| Prom --> Graf
+    Load -->|"로그인 · 메시지 · 동시 예약"| App
+    Load -.->|"p95 · p99 · 에러율 비교"| Graf

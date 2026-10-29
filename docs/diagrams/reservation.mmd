@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant R1 as 요청 1 (14:00~15:00)
+    participant R2 as 요청 2 (14:30~15:30)
+    participant API as API
+    participant DB as PostgreSQL
+
+    par 동시 요청
+        R1->>API: 예약
+        R2->>API: 예약
+    end
+    API->>DB: 회의실 행 잠금 (SELECT ... FOR UPDATE)
+    Note over API,DB: 요청 1이 먼저 잠금을 얻음
+    API->>DB: 겹치는 예약 조회 → 없음
+    API->>DB: 요청 1 저장 · commit
+    API-->>R1: 성공
+    API->>DB: 요청 2 잠금 획득 → 겹침 조회 → 1건
+    API-->>R2: 실패 (시간이 겹칩니다)

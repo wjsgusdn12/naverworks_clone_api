@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant U as 사용자
+    participant F as Next.js
+    participant A as API
+    participant D as PostgreSQL
+
+    U->>F: 아이디 · 비밀번호
+    F->>A: POST /auth/login
+    A->>D: 계정 조회 · 해시 비교
+    A->>D: Refresh Token 해시 저장 (세션 만료 7일)
+    A-->>F: Access Token (3h) + Refresh Token
+    F-->>U: 홈 화면
+
+    Note over F: 만료 1분 전 자동 갱신
+    F->>A: POST /auth/refresh
+    A->>D: 기존 토큰 폐기 · 새 토큰 저장 (만료 시각 유지)
+    A-->>F: 새 Access · Refresh
+
+    F->>A: POST /auth/logout
+    A->>D: Refresh Token 폐기

@@ -1,0 +1,22 @@
+flowchart LR
+    Browser["브라우저"]
+    Front["Next.js 프론트"]
+    subgraph API["Spring Boot API"]
+        Security["Spring Security · JWT"]
+        REST["REST 컨트롤러"]
+        STOMP["STOMP 브로커"]
+        Service["도메인 서비스"]
+        JPA["JPA · Flyway"]
+    end
+    DB[("PostgreSQL<br/>Supabase")]
+    Redis[("Redis<br/>Pub/Sub · Presence")]
+    LLM["외부 LLM API"]
+
+    Browser --> Front
+    Front -->|"HTTPS · REST"| Security
+    Front -.->|"WebSocket · STOMP"| Security
+    Security --> REST --> Service
+    Security --> STOMP --> Service
+    Service --> JPA --> DB
+    Service -.-> Redis
+    Service -.->|"요약 요청"| LLM

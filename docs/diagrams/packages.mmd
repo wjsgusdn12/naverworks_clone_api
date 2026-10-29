@@ -1,0 +1,15 @@
+flowchart TB
+    Root["com.jhwjhw.naverworkscloneapi"]
+    Root --> Common["common<br/>ApiResponse · 예외 핸들러 · JWT 필터"]
+    Root --> Config["config<br/>Security · WebSocket · CORS"]
+    Root --> Identity["identity<br/>회사 · 부서 · 구성원 · 계정"]
+    Root --> Auth["auth<br/>로그인 · 토큰 · 내 정보"]
+    Root --> Address["addressbook<br/>조직도 · 검색 · 즐겨찾기"]
+    Root --> Chat["chat<br/>방 · 메시지 · 리액션 · 공지<br/>실시간 이벤트 발행"]
+    Root --> Notification["notification<br/>알림 생성 · 조회 · 읽음"]
+    Root --> Presence["presence<br/>접속 상태"]
+    Root --> Schedule["schedule<br/>일정 · 회의실 · 예약"]
+    Root --> Dashboard["dashboard<br/>Today · 관리자 통계"]
+    Root --> AI["ai<br/>대화 요약"]
+    Chat -.->|"ApplicationEvent"| Notification
+    Chat -.->|"AFTER_COMMIT"| Presence

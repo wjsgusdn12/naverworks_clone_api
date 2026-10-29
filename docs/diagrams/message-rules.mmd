@@ -1,0 +1,10 @@
+flowchart TB
+    Msg["TEXT 메시지"]
+    Msg --> Reply["답장<br/>원문 내용 스냅샷 보존<br/>원문 삭제 시 '삭제된 메시지'"]
+    Msg --> Edit["수정<br/>본인 · 24h 이내<br/>version으로 충돌 감지"]
+    Msg --> Delete["삭제<br/>본인 · 24h 이내 · 논리 삭제<br/>공지였다면 자동 내림"]
+    Msg --> Forward["전달<br/>참여 중인 방 최대 10개<br/>새 메시지로 복사 + 원본 ID"]
+    Msg --> Notice["공지<br/>모든 참여자 등록 가능<br/>방당 여러 개 · 내리기 · 다시 보지 않기"]
+    Msg --> React["리액션<br/>1인 1이모지 · 24h 이내<br/>누른 사람 목록"]
+    Msg --> Mention["멘션<br/>@구성원 · @All<br/>알림 규칙과 연결"]
+    System["SYSTEM 메시지<br/>초대 · 퇴장 · 공지 안내"] -.->|"읽음 · 공지 · 리액션 대상 아님"| Msg

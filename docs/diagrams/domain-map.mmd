@@ -1,0 +1,9 @@
+flowchart TB
+    Core(("NaverWorks Clone"))
+    Core --> Identity["조직 · 인증<br/>회사 · 부서 · 구성원 · 역할<br/>JWT · 데모 모드"]
+    Core --> Chat["메신저<br/>1:1 · 그룹 · 나와의 채팅<br/>읽음 · 답장 · 수정 · 삭제<br/>전달 · 공지 · 리액션 · 멘션"]
+    Core --> Schedule["일정 · 회의실<br/>개인 · 조직 일정<br/>예약 · 동시성 제어"]
+    Core --> Home["Today · 관리자 대시보드<br/>오늘 일정 · 안 읽은 메시지<br/>활동 통계 · Drill-down"]
+    Core --> Realtime["실시간 · 접속 상태<br/>STOMP · Presence TTL<br/>Redis Pub/Sub"]
+    Core --> Ops["운영<br/>알림 · 감사 로그<br/>Actuator · Prometheus · Grafana"]
+    Core --> AI["AI<br/>채팅방 대화 요약<br/>Timeout · Retry · Fallback"]

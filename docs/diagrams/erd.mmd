@@ -1,0 +1,41 @@
+erDiagram
+    COMPANY ||--o{ DEPARTMENT : "포함"
+    COMPANY ||--o{ MEMBERSHIP : "소속"
+    DEPARTMENT ||--o{ MEMBERSHIP : "배치"
+    USER_ACCOUNT ||--o{ MEMBERSHIP : "계정"
+    JOB_GRADE ||--o{ MEMBERSHIP : "직급"
+    MEMBERSHIP ||--o{ REFRESH_TOKEN : "세션"
+    MEMBERSHIP ||--o{ MEMBER_FAVORITE : "즐겨찾기"
+    MEMBERSHIP ||--o{ SEARCH_HISTORY : "검색 기록"
+
+    CHAT_ROOM ||--o{ CHAT_ROOM_MEMBER : "참여"
+    MEMBERSHIP ||--o{ CHAT_ROOM_MEMBER : "참여자"
+    CHAT_ROOM ||--o{ CHAT_MESSAGE : "메시지"
+    MEMBERSHIP ||--o{ CHAT_MESSAGE : "보낸 사람"
+    CHAT_MESSAGE ||--o{ CHAT_MESSAGE_MENTION : "멘션"
+    CHAT_MESSAGE ||--o{ CHAT_MESSAGE_REACTION : "리액션"
+    CHAT_MESSAGE o|--o{ CHAT_MESSAGE : "답장 · 전달 원본"
+    CHAT_ROOM ||--o{ CHAT_ROOM_NOTICE : "공지"
+    MEMBERSHIP ||--o{ NOTIFICATION : "알림"
+
+    MEMBERSHIP ||--o{ CALENDAR_EVENT : "일정"
+    MEETING_ROOM ||--o{ RESERVATION : "예약"
+    MEMBERSHIP ||--o{ RESERVATION : "예약자"
+
+    CHAT_ROOM_MEMBER {
+        bigint last_read_message_id "읽음 커서"
+        timestamptz pinned_at
+        string notification_mode
+    }
+    CHAT_MESSAGE {
+        string message_type "TEXT · SYSTEM"
+        bigint reply_to_message_id
+        bigint forwarded_from_message_id
+        timestamptz edited_at
+        timestamptz deleted_at "논리 삭제"
+        long version "낙관적 락"
+    }
+    RESERVATION {
+        timestamptz start_at "[start, end)"
+        timestamptz end_at
+    }

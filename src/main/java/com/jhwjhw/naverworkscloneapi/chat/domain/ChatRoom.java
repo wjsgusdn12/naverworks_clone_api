@@ -40,13 +40,6 @@ public class ChatRoom {
     @Column(nullable = false)
     private Instant createdAt;
 
-    // 방 공지. 방당 하나만 두고, 새로 등록하면 교체. 등록한 사람과 시각을 함께 보관.
-    @Column(name = "notice_message_id")
-    private Long noticeMessageId;
-    @Column(name = "notice_set_by_membership_id")
-    private Long noticeSetByMembershipId;
-    private Instant noticeSetAt;
-
     protected ChatRoom() {
     }
 
@@ -66,20 +59,6 @@ public class ChatRoom {
     // 그룹 채팅방의 이름만 변경.
     public void rename(String name) {
         this.name = name;
-    }
-
-    // 공지 등록(기존 공지가 있으면 교체)
-    public void updateNotice(Long messageId, Long membershipId) {
-        this.noticeMessageId = messageId;
-        this.noticeSetByMembershipId = membershipId;
-        this.noticeSetAt = Instant.now();
-    }
-
-    // 공지 해제
-    public void clearNotice() {
-        this.noticeMessageId = null;
-        this.noticeSetByMembershipId = null;
-        this.noticeSetAt = null;
     }
 
     // 채팅방 종료

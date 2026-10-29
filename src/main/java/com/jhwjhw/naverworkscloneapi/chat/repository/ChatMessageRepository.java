@@ -32,6 +32,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
     boolean existsByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
 
+    // 페이지에 담긴 메시지들의 멘션 대상을 쿼리 한 번으로 조회(N+1 방지).
+    // mentionedMembershipIds는 별도 테이블이라 메시지마다 getter를 부르면 건수만큼 쿼리가 나감.
+    @Query("select message.id as messageId, membershipId as membershipId from ChatMessage message "
+            + "join message.mentionedMembershipIds membershipId where message.id in :messageIds")
+    List<ChatMessageMentionRow> findMentionsByMessageIds(@Param("messageIds") List<Long> messageIds);
+
     // 읽음 위치 갱신에는 최신 메시지 ID 하나만 필요하므로 50건을 내려받지 않고 집계만 조회.
     @Query("select max(message.id) from ChatMessage message where message.chatRoom.id = :roomId")
     Long findMaxIdByChatRoomId(@Param("roomId") Long roomId);

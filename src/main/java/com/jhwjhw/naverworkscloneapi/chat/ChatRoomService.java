@@ -9,6 +9,7 @@ import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomNotice;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageMentionRow;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
@@ -480,8 +481,10 @@ public class ChatRoomService {
                 ? lastId : null;
         Map<Long, ChatMessageReadSummary> summaries = readSummaries(ordered);
         Map<Long, List<ChatRoomResponse.Reaction>> reactionMap = reactionSummaries(ordered, requesterId);
+        Map<Long, List<Long>> mentionMap = mentions(ordered);
         List<ChatRoomResponse.Message> result = ordered.stream()
-                .map(item -> message(item, summaries.get(item.getId()), reactionMap.getOrDefault(item.getId(), List.of())))
+                .map(item -> message(item, summaries.get(item.getId()), reactionMap.getOrDefault(item.getId(), List.of()),
+                        mentionMap.getOrDefault(item.getId(), List.of())))
                 .toList();
         return new ChatRoomResponse.MessagePage(result, nextCursor, newerCursor);
     }
@@ -734,8 +737,26 @@ public class ChatRoomService {
                                 summary.getCount(), summary.getMineCount() > 0), Collectors.toList())));
     }
 
+    // 페이지 메시지들의 멘션 대상을 한 번에 읽어 메시지 ID별로 묶음. 반복문 안에서는 이 Map만 읽음.
+    private Map<Long, List<Long>> mentions(List<ChatMessage> messages) {
+        List<Long> messageIds = messages.stream().filter(message -> message.getMessageType() == ChatMessageType.TEXT)
+                .map(ChatMessage::getId).toList();
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        return messageRepository.findMentionsByMessageIds(messageIds).stream()
+                .collect(Collectors.groupingBy(ChatMessageMentionRow::getMessageId,
+                        Collectors.mapping(ChatMessageMentionRow::getMembershipId, Collectors.toList())));
+    }
+
+    // 메시지 한 건만 다룰 때는 지연 로딩 한 번이 전부라 getter를 그대로 사용.
     private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary,
             List<ChatRoomResponse.Reaction> reactions) {
+        return message(message, readSummary, reactions, List.copyOf(message.getMentionedMembershipIds()));
+    }
+
+    private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary,
+            List<ChatRoomResponse.Reaction> reactions, List<Long> mentionedMembershipIds) {
         long recipientCount = readSummary == null ? 0 : readSummary.getRecipientCount();
         long readCount = readSummary == null ? 0 : readSummary.getReadCount();
         long unreadCount = Math.max(0, recipientCount - readCount);
@@ -749,7 +770,7 @@ public class ChatRoomService {
         return new ChatRoomResponse.Message(message.getId(), message.getSenderMembership().getId(),
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
-                message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()),
+                message.getCreatedAt(), unreadCount, readCount, mentionedMembershipIds,
                 reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion(), reactions,
                 message.getForwardedFromMessageId() != null);
     }

@@ -58,6 +58,10 @@ public class ChatMessage {
     @JoinColumn(name = "reply_to_message_id", insertable = false, updatable = false)
     private ChatMessage replyToMessage;
 
+    // 전달로 만들어진 메시지의 원본 ID. 화면에는 "전달된 메시지" 라벨만 보여 줌.
+    @Column(name = "forwarded_from_message_id")
+    private Long forwardedFromMessageId;
+
     // 메시지 본문과 분리해 저장한 멘션 대상. @All은 서버에서 활성 구성원 ID로 확장한다.
     @ElementCollection
     @CollectionTable(name = "chat_message_mention", joinColumns = @JoinColumn(name = "chat_message_id"))
@@ -84,6 +88,10 @@ public class ChatMessage {
         this.replyToSenderName = original.getSenderMembership().getUserAccount().getDisplayName();
         this.replyToContent = original.getContent();
         this.replyToMessage = original;
+    }
+
+    public void forwardedFrom(ChatMessage original) {
+        this.forwardedFromMessageId = original.getId();
     }
 
     public void editContent(String content, Set<Long> mentionedMembershipIds) {

@@ -27,7 +27,9 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -60,12 +62,19 @@ public class AddressBookService {
     @Transactional(readOnly = true)
     public List<OrganizationResponse> getOrganization(Long requesterMembershipId) {
         Membership requester = findMembership(requesterMembershipId);
+        // 회사 수만큼 쿼리가 늘지 않도록 부서 전체와 회사별 인원수를 각각 한 번에 읽어 Map으로 묶음.
+        Map<Long, List<Department>> departmentsByCompany = departmentRepository.findAllByOrderByNameAsc().stream()
+                .collect(Collectors.groupingBy(department -> department.getCompany().getId()));
+        Map<Long, Long> memberCountByCompany = membershipRepository.countEnabledByCompany().stream()
+                .collect(Collectors.toMap(MembershipRepository.CompanyMemberCount::getCompanyId,
+                        MembershipRepository.CompanyMemberCount::getMemberCount));
         return companyRepository.findAllByOrderByNameAsc().stream()
                 .map(company -> new OrganizationResponse(
                         company.getId(),
                         company.getName(),
                         company.getId().equals(requester.getCompany().getId()),
-                        departmentRepository.findByCompanyIdOrderByNameAsc(company.getId()).stream()
+                        memberCountByCompany.getOrDefault(company.getId(), 0L),
+                        departmentsByCompany.getOrDefault(company.getId(), List.of()).stream()
                                 .map(department -> new DepartmentResponse(department.getId(), department.getName(),
                                         department.isEnabled()))
                                 .toList()))

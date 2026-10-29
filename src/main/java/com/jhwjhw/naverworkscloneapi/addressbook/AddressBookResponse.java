@@ -11,7 +11,9 @@ public final class AddressBookResponse {
         // 정적 DTO 묶음 클래스는 인스턴스 생성 금지.
     }
 
-    public record OrganizationResponse(Long companyId, String companyName, boolean currentCompany, List<DepartmentResponse> departments) {
+    // memberCount는 사용 중인 계정 기준 회사 인원수.
+    public record OrganizationResponse(Long companyId, String companyName, boolean currentCompany, long memberCount,
+            List<DepartmentResponse> departments) {
     }
 
     public record DepartmentResponse(Long id, String name, boolean enabled) {

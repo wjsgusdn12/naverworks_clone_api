@@ -1,12 +1,14 @@
 package com.jhwjhw.naverworkscloneapi.identity.repository;
 
 import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.domain.Specification;
 
 // 사용자 계정이 속한 회사·부서·역할 정보를 조회·정리할 때 사용하는 JPA Repository.
@@ -26,4 +28,15 @@ public interface MembershipRepository extends JpaRepository<Membership, Long>, J
 
     // 부서 존재 여부 조회
     boolean existsByDepartmentIdAndUserAccountEnabledTrue(Long departmentId);
+
+    // 회사별 사용 중인 구성원 수를 쿼리 한 번으로 집계(조직도 표시용).
+    @Query("select membership.company.id as companyId, count(membership) as memberCount from Membership membership "
+            + "where membership.userAccount.enabled = true group by membership.company.id")
+    List<CompanyMemberCount> countEnabledByCompany();
+
+    interface CompanyMemberCount {
+        Long getCompanyId();
+
+        long getMemberCount();
+    }
 }

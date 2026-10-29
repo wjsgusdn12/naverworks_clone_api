@@ -9,4 +9,7 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
     // 부서 조회
     List<Department> findByCompanyIdOrderByNameAsc(Long companyId);
+
+    // 조직도 한 번에 그릴 때 회사마다 따로 조회하지 않도록 전체를 한 번에 읽음.
+    List<Department> findAllByOrderByNameAsc();
 }

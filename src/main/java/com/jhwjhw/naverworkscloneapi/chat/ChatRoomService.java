@@ -146,7 +146,86 @@ public class ChatRoomService {
                 activeMembers.stream()
                         .map(member -> new ChatRoomResponse.ReadCursor(member.getMembership().getId(),
                                 member.getLastReadMessageId()))
-                        .toList());
+                        .toList(),
+                notice(room));
+    }
+
+    // 방 공지 응답. 공지 메시지가 삭제됐으면 없는 것으로 취급.
+    private ChatRoomResponse.Notice notice(ChatRoom room) {
+        if (room.getNoticeMessageId() == null) return null;
+        ChatMessage message = messageRepository.findById(room.getNoticeMessageId()).orElse(null);
+        if (message == null || message.getDeletedAt() != null) return null;
+        String setByName = room.getNoticeSetByMembershipId() == null ? null
+                : membershipRepository.findById(room.getNoticeSetByMembershipId())
+                        .map(membership -> membership.getUserAccount().getDisplayName()).orElse(null);
+        return new ChatRoomResponse.Notice(message.getId(),
+                message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
+                room.getNoticeSetByMembershipId(), setByName, room.getNoticeSetAt());
+    }
+
+    // 공지 등록. 모든 참여자가 등록할 수 있고, 기존 공지는 교체됨.
+    @Transactional
+    public ChatRoomResponse.Notice updateNotice(Long requesterId, Long roomId, Long messageId) {
+        ChatRoomMember requester = active(roomId, requesterId);
+        ChatRoom room = requester.getChatRoom();
+        ChatMessage message = requireRoomMessage(roomId, messageId);
+        requireNotDeleted(message);
+        if (message.getMessageType() != ChatMessageType.TEXT) {
+            throw new ChatException("CHAT_NOTICE_NOT_ALLOWED", "시스템 안내는 공지로 등록할 수 없습니다.");
+        }
+        room.updateNotice(messageId, requesterId);
+        systemMessage(room, requester.getMembership(),
+                requester.getMembership().getUserAccount().getDisplayName() + "님이 공지를 등록했습니다.");
+        ChatRoomResponse.Notice notice = notice(room);
+        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notice));
+        log.info("Chat notice updated. roomId={}, messageId={}, requesterId={}", roomId, messageId, requesterId);
+        return notice;
+    }
+
+    // 공지 해제. 이미 없으면 아무것도 바꾸지 않음(재시도에 안전).
+    @Transactional
+    public void removeNotice(Long requesterId, Long roomId) {
+        ChatRoomMember requester = active(roomId, requesterId);
+        ChatRoom room = requester.getChatRoom();
+        if (room.getNoticeMessageId() == null) return;
+        room.clearNotice();
+        systemMessage(room, requester.getMembership(),
+                requester.getMembership().getUserAccount().getDisplayName() + "님이 공지를 해제했습니다.");
+        eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, null));
+        log.info("Chat notice removed. roomId={}, requesterId={}", roomId, requesterId);
+    }
+
+    // 메시지 전달. 선택한 방마다 같은 내용의 새 메시지를 보냄(멘션·답장은 복사하지 않음).
+    @Transactional
+    public List<ChatRoomResponse.Message> forwardMessage(Long requesterId, Long roomId, Long messageId,
+            List<Long> targetRoomIds) {
+        active(roomId, requesterId);
+        ChatMessage original = requireRoomMessage(roomId, messageId);
+        requireNotDeleted(original);
+        if (original.getMessageType() != ChatMessageType.TEXT) {
+            throw new ChatException("CHAT_FORWARD_NOT_ALLOWED", "시스템 안내는 전달할 수 없습니다.");
+        }
+        // 같은 방을 두 번 고르면 한 번만 보냄.
+        List<Long> distinctTargets = targetRoomIds.stream().distinct().toList();
+        return distinctTargets.stream().map(targetRoomId -> {
+            ChatRoomMember sender = active(targetRoomId, requesterId);
+            ChatMessage copy = new ChatMessage(sender.getChatRoom(), sender.getMembership(), original.getContent(),
+                    ChatMessageType.TEXT);
+            copy.forwardedFrom(original);
+            return deliver(sender, copy);
+        }).toList();
+    }
+
+    // 저장·읽음 처리·알림·실시간 발행까지 메시지 한 건을 보내는 공통 흐름.
+    private ChatRoomResponse.Message deliver(ChatRoomMember sender, ChatMessage message) {
+        ChatRoom room = sender.getChatRoom();
+        messageRepository.save(message);
+        sender.markRead(message.getId());
+        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()), List.of());
+        notifyMessage(room, sender.getMembership(), message);
+        // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
+        eventPublisher.publishEvent(new ChatMessageCreatedEvent(room.getId(), response));
+        return response;
     }
 
     @Transactional
@@ -256,14 +335,9 @@ public class ChatRoomService {
             message.replyTo(original);
         }
         message.mention(validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds()));
-        messageRepository.save(message);
-        sender.markRead(message.getId());
+        ChatRoomResponse.Message response = deliver(sender, message);
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}, replyToMessageId={}",
                 roomId, message.getId(), requesterId, message.getReplyToMessageId());
-        ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()), List.of());
-        notifyMessage(room, sender.getMembership(), message);
-        // DB 커밋이 끝난 뒤에만 구독자에게 실시간 메시지를 전달.
-        eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, response));
         return response;
     }
 
@@ -315,6 +389,12 @@ public class ChatRoomService {
         requireWithinWindow(message, "CHAT_MESSAGE_DELETE_EXPIRED", "24시간 이내에 보낸 메시지만 삭제할 수 있습니다.");
         requireMessageVersion(message, expectedVersion);
         message.deleteContent();
+        // 공지로 걸린 메시지를 지우면 공지도 함께 내림.
+        ChatRoom room = message.getChatRoom();
+        if (messageId.equals(room.getNoticeMessageId())) {
+            room.clearNotice();
+            eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, null));
+        }
         return publishMessageChange("MESSAGE_DELETED", requesterId, roomId, message);
     }
 
@@ -660,7 +740,8 @@ public class ChatRoomService {
                 message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
                 message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount, List.copyOf(message.getMentionedMembershipIds()),
-                reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion(), reactions);
+                reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion(), reactions,
+                message.getForwardedFromMessageId() != null);
     }
 
     // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.

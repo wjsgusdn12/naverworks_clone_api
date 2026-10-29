@@ -14,9 +14,14 @@ public record ChatRoomResponse() {
             boolean lastMessageMentioned, Long lastMessageId, long lastMessageVersion) {
     }
 
-    // 채팅방 상세 응답
+    // 채팅방 상세 응답. notice는 공지가 없으면 null.
     public record Detail(Room room, List<Long> memberIds, List<MemberProfile> members,
-            List<ReadCursor> readCursors) {
+            List<ReadCursor> readCursors, Notice notice) {
+    }
+
+    // 방 상단에 고정하는 공지. 원문 메시지 위치와 내용, 등록한 사람.
+    public record Notice(Long messageId, String senderName, String content, Long setByMembershipId,
+            String setByName, Instant setAt) {
     }
 
     // 구성원별 마지막 읽은 메시지 ID. 화면이 말풍선 읽음 수를 이 값으로 직접 계산해 실시간 이벤트와 어긋나지 않게 함.
@@ -32,7 +37,7 @@ public record ChatRoomResponse() {
     public record Message(Long id, Long senderMembershipId, String senderName, String content, String type,
             Instant createdAt,
             long unreadCount, long readCount, List<Long> mentionedMembershipIds, Reply reply,
-            Instant editedAt, Instant deletedAt, long version, List<Reaction> reactions) {
+            Instant editedAt, Instant deletedAt, long version, List<Reaction> reactions, boolean forwarded) {
     }
 
     // 말풍선 아래 묶음 표시용 이모지별 집계. reactedByMe는 요청한 사용자 기준.

@@ -133,6 +133,29 @@ public class ChatRoomController {
         service.deleteMessage(id(jwt), chatRoomId, messageId, request.expectedVersion()));
   }
 
+  // 메시지 전달. 선택한 방마다 새 메시지로 복사.
+  @PostMapping("/message/forward")
+  public ApiResponse<List<ChatRoomResponse.Message>> forwardMessage(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId, @Valid @RequestBody ChatRoomRequest.ForwardRequest r) {
+    return ApiResponse.success("CHAT_MESSAGE_FORWARDED", "메시지를 전달했습니다.",
+        service.forwardMessage(id(jwt), chatRoomId, messageId, r.targetChatRoomIds()));
+  }
+
+  // 공지 등록(기존 공지는 교체).
+  @PostMapping("/notice/update")
+  public ApiResponse<ChatRoomResponse.Notice> updateNotice(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam Long messageId) {
+    return ApiResponse.success("CHAT_NOTICE_UPDATED", "공지를 등록했습니다.",
+        service.updateNotice(id(jwt), chatRoomId, messageId));
+  }
+
+  // 공지 해제.
+  @PostMapping("/notice/remove")
+  public ApiResponse<Void> removeNotice(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
+    service.removeNotice(id(jwt), chatRoomId);
+    return ApiResponse.success("CHAT_NOTICE_REMOVED", "공지를 해제했습니다.", null);
+  }
+
   // 리액션 추가. 이미 눌렀으면 그대로 성공(멱등).
   @PostMapping("/message/reaction/add")
   public ApiResponse<List<ChatRoomResponse.Reaction>> addReaction(@AuthenticationPrincipal Jwt jwt,

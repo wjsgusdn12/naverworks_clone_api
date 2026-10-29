@@ -40,4 +40,8 @@ public record ChatRoomRequest() {
   // 리액션 추가·취소 요청. emoji는 코드명(thumbs_up 등).
   public record ReactionRequest(@NotBlank @Size(max = 40) String emoji) {
   }
+
+  // 메시지 전달 요청. 한 번에 최대 10개 방.
+  public record ForwardRequest(@NotEmpty @Size(max = 10) List<Long> targetChatRoomIds) {
+  }
 }

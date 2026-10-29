@@ -58,6 +58,20 @@ public class AuthController {
                                                 new SignupResponse.Created(session.response(), result.recoveryCode())));
         }
 
+        // 계정 찾기 1단계: 복구 코드로 계정 확인(로그인 전)
+        @PostMapping("/recover/lookup")
+        public ApiResponse<SignupResponse.RecoverLookup> recoverLookup(@Valid @RequestBody RecoverRequest.Lookup request) {
+                return ApiResponse.success("AUTH_RECOVER_LOOKUP_SUCCESS", "계정을 확인했습니다.",
+                                authService.recoverLookup(request.recoveryCode()));
+        }
+
+        // 계정 찾기 2단계: 복구 코드로 비밀번호 재설정(로그인 전). 새 복구 코드를 돌려줌.
+        @PostMapping("/recover/reset")
+        public ApiResponse<SignupResponse.RecoveryCode> recoverReset(@Valid @RequestBody RecoverRequest.Reset request) {
+                return ApiResponse.success("AUTH_RECOVER_RESET_SUCCESS", "비밀번호를 변경했습니다.",
+                                authService.recoverReset(request.recoveryCode(), request.newPassword()));
+        }
+
         // 복구 코드 재발급(로그인 후 내 프로필)
         @PostMapping("/recoveryCode/regenerate")
         public ApiResponse<SignupResponse.RecoveryCode> regenerateRecoveryCode(@AuthenticationPrincipal Jwt jwt) {

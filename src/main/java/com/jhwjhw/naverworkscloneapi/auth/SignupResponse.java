@@ -26,4 +26,8 @@ public final class SignupResponse {
     // 관리자가 보는 회사 초대 코드
     public record InviteCode(String companyName, String inviteCode) {
     }
+
+    // 계정 찾기 1단계: 아이디는 일부만 가려서 보여 줌(예: ne***01)
+    public record RecoverLookup(String maskedLoginId, String displayName) {
+    }
 }

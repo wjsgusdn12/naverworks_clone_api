@@ -57,7 +57,8 @@ public class SecurityConfig {
                         // WebSocket 연결 인증은 STOMP CONNECT 단계에서 JWT로 검증.
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh",
-                                "/api/v1/auth/logout", "/api/v1/auth/signup")
+                                "/api/v1/auth/logout", "/api/v1/auth/signup", "/api/v1/auth/recover/lookup",
+                                "/api/v1/auth/recover/reset")
                         .permitAll()
                         // 가입 화면이 로그인 전에 체험 회사의 부서·직급 목록을 받아 감.
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/signup/options").permitAll()

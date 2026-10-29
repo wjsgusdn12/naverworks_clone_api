@@ -261,6 +261,46 @@ public class AuthService {
         return new SignupResponse.InviteCode(company.getName(), company.getInviteCode());
     }
 
+    // 계정 찾기 1단계: 복구 코드가 맞으면 어느 계정인지 가려서 알려 줌.
+    @Transactional(readOnly = true)
+    public SignupResponse.RecoverLookup recoverLookup(String recoveryCode) {
+        UserAccount userAccount = accountByRecoveryCode(recoveryCode);
+        return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName());
+    }
+
+    // 계정 찾기 2단계: 비밀번호를 바꾸고 기존 로그인을 모두 끊은 뒤, 쓴 복구 코드는 버리고 새 코드를 발급.
+    @Transactional
+    public SignupResponse.RecoveryCode recoverReset(String recoveryCode, String newPassword) {
+        UserAccount userAccount = accountByRecoveryCode(recoveryCode);
+        userAccount.changePassword(passwordEncoder.encode(newPassword));
+        String nextCode = createRecoveryCode();
+        userAccount.updateRecoveryCodeHash(hashToken(nextCode));
+        membershipRepository.findByUserAccountId(userAccount.getId()).ifPresent(membership -> {
+            Instant now = Instant.now();
+            refreshTokenRepository.findByMembershipIdAndRevokedAtIsNull(membership.getId())
+                    .forEach(token -> token.revoke(now));
+            notificationService.create(membership.getId(), NotificationCategory.SYSTEM, "비밀번호 변경 알림",
+                    "복구 코드로 비밀번호가 변경되었습니다. 본인이 아니라면 다시 변경해 주세요.", null);
+            log.info("Password reset by recovery code. membershipId={}", membership.getId());
+        });
+        return new SignupResponse.RecoveryCode(nextCode);
+    }
+
+    private UserAccount accountByRecoveryCode(String recoveryCode) {
+        String normalized = recoveryCode == null ? "" : recoveryCode.trim().toUpperCase(Locale.ROOT);
+        return userAccountRepository.findByRecoveryCodeHash(hashToken(normalized))
+                .filter(UserAccount::isEnabled)
+                .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "복구 코드가 올바르지 않습니다."));
+    }
+
+    // 앞 2글자와 뒤 2글자만 남기고 가림. 짧은 아이디는 앞 1글자만.
+    static String maskLoginId(String loginId) {
+        if (loginId.length() <= 4) {
+            return loginId.charAt(0) + "*".repeat(loginId.length() - 1);
+        }
+        return loginId.substring(0, 2) + "*".repeat(loginId.length() - 4) + loginId.substring(loginId.length() - 2);
+    }
+
     private Company demoCompany() {
         return companyRepository.findFirstByDemoTrue()
                 .orElseThrow(() -> new AuthException("AUTH_DEMO_COMPANY_MISSING", "체험 회사가 설정되어 있지 않습니다."));

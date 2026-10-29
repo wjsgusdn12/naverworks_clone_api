@@ -356,6 +356,51 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.code").value("AUTH_LOGIN_ID_TAKEN"));
     }
 
+    // 계정 찾기: 복구 코드로 아이디를 확인하고 비밀번호를 바꾸면, 새 비밀번호로만 로그인되고 쓴 코드는 무효가 됨.
+    @Test
+    void recoveryCodeLooksUpAccountAndResetsPassword() throws Exception {
+        MvcResult signupResult = mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"forgetful\",\"password\":\"old-pass-123\",\"displayName\":\"건망증\","
+                                + "\"joinType\":\"DEMO\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String recoveryCode = objectMapper.readTree(signupResult.getResponse().getContentAsString())
+                .path("data").path("recoveryCode").asText();
+
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
+                .andExpect(jsonPath("$.data.displayName").value("건망증"));
+
+        MvcResult resetResult = mockMvc.perform(post("/api/v1/auth/recover/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recoveryCode\":\"" + recoveryCode + "\",\"newPassword\":\"new-pass-456\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String nextCode = objectMapper.readTree(resetResult.getResponse().getContentAsString())
+                .path("data").path("recoveryCode").asText();
+        assertThat(nextCode).isNotEqualTo(recoveryCode);
+
+        // 쓴 코드는 더 이상 통하지 않음.
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recoveryCode\":\"" + recoveryCode + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"forgetful\",\"password\":\"old-pass-123\",\"rememberMe\":false}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"forgetful\",\"password\":\"new-pass-456\",\"rememberMe\":false}"))
+                .andExpect(status().isOk());
+    }
+
     // 초대 코드: 관리자가 발급한 코드로 가입하면 그 회사의 일반 구성원이 됨.
     @Test
     void signupWithInviteCodeJoinsAdminsCompany() throws Exception {

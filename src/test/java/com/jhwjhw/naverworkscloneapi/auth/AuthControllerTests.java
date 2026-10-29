@@ -401,6 +401,44 @@ class AuthControllerTests {
                 .andExpect(status().isOk());
     }
 
+    // 회사 옮기기: 새 회사를 만들어 옮기면 대표가 되고, 새 토큰의 회사 ID가 바뀜. 같은 회사로는 못 옮김.
+    @Test
+    void moveCompanyCreatesNewCompanyAndReissuesTokens() throws Exception {
+        String token = accessTokenFor(testUserMembership);
+        MvcResult moveResult = mockMvc.perform(post("/api/v1/auth/company/move")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"joinType\":\"NEW_COMPANY\",\"companyName\":\"이직한 회사\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("AUTH_COMPANY_MOVED"))
+                .andExpect(jsonPath("$.data.member.companyName").value("이직한 회사"))
+                .andExpect(jsonPath("$.data.member.role").value("ADMIN"))
+                .andReturn();
+        assertThat(moveResult.getResponse().getHeader("Set-Cookie")).contains("refreshToken=");
+        String newToken = objectMapper.readTree(moveResult.getResponse().getContentAsString())
+                .path("data").path("accessToken").asText();
+
+        mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + newToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.companyName").value("이직한 회사"));
+
+        // 체험 회사로 돌아가기: 일반 사용자로 복귀.
+        mockMvc.perform(post("/api/v1/auth/company/move")
+                        .header("Authorization", "Bearer " + newToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"joinType\":\"DEMO\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.member.companyName").value("테스트 회사"))
+                .andExpect(jsonPath("$.data.member.role").value("USER"));
+
+        mockMvc.perform(post("/api/v1/auth/company/move")
+                        .header("Authorization", "Bearer " + accessTokenFor(testUserMembership))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"joinType\":\"DEMO\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_COMPANY_SAME"));
+    }
+
     // 초대 코드: 관리자가 발급한 코드로 가입하면 그 회사의 일반 구성원이 됨.
     @Test
     void signupWithInviteCodeJoinsAdminsCompany() throws Exception {

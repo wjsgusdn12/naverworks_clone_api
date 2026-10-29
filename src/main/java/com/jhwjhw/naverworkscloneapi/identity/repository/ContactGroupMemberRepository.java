@@ -15,4 +15,7 @@ public interface ContactGroupMemberRepository extends JpaRepository<ContactGroup
 
     // 주소록 그룹 구성원 존재 여부 조회
     boolean existsByContactGroupIdAndMembershipId(Long contactGroupId, Long membershipId);
+
+    // 회사 옮기기 정리용: 내가 속한 주소록 그룹
+    List<ContactGroupMember> findByMembershipId(Long membershipId);
 }

@@ -1,5 +1,6 @@
 package com.jhwjhw.naverworkscloneapi.auth;
 
+import com.jhwjhw.naverworkscloneapi.chat.ChatRoomService;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Company;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Department;
 import com.jhwjhw.naverworkscloneapi.identity.domain.JobGrade;
@@ -7,8 +8,10 @@ import com.jhwjhw.naverworkscloneapi.identity.domain.Membership;
 import com.jhwjhw.naverworkscloneapi.identity.domain.Role;
 import com.jhwjhw.naverworkscloneapi.identity.domain.UserAccount;
 import com.jhwjhw.naverworkscloneapi.identity.repository.CompanyRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.ContactGroupMemberRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.DepartmentRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.JobGradeRepository;
+import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.UserAccountRepository;
 import com.jhwjhw.naverworkscloneapi.notification.NotificationService;
@@ -45,6 +48,9 @@ public class AuthService {
     private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final JobGradeRepository jobGradeRepository;
+    private final MemberFavoriteRepository memberFavoriteRepository;
+    private final ContactGroupMemberRepository contactGroupMemberRepository;
+    private final ChatRoomService chatRoomService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
@@ -169,17 +175,14 @@ public class AuthService {
         userAccount.updateRecoveryCodeHash(hashToken(recoveryCode));
         userAccountRepository.save(userAccount);
 
-        Membership membership = switch (request.joinType()) {
-            case DEMO -> joinDemoCompany(userAccount, request);
-            case NEW_COMPANY -> createCompanyAsOwner(userAccount, request.companyName());
-            case INVITE -> joinByInviteCode(userAccount, request.inviteCode());
-        };
+        Placement placement = placement(request.joinType(), request.departmentId(), request.jobGradeId(),
+                request.companyName(), request.inviteCode());
+        Membership membership = new Membership(placement.company(), userAccount, placement.department(),
+                placement.role());
         String phone = request.phoneNumber() == null || request.phoneNumber().isBlank() ? null
                 : request.phoneNumber().trim();
-        if (phone != null) {
-            membership.updateProfile(membership.getDepartment(), membership.getJobGrade(), membership.getJobTitle(),
-                    phone, membership.getHiredAt(), membership.getRole());
-        }
+        membership.updateProfile(placement.department(), placement.jobGrade(), placement.jobTitle(), phone, null,
+                placement.role());
         membershipRepository.save(membership);
 
         log.info("Signup succeeded. membershipId={}, companyId={}, joinType={}", membership.getId(),
@@ -190,26 +193,35 @@ public class AuthService {
         return new SignupResult(session, recoveryCode);
     }
 
+    // 어느 회사에 어떤 소속으로 들어갈지. 가입과 회사 옮기기가 함께 씀.
+    private record Placement(Company company, Department department, JobGrade jobGrade, String jobTitle, Role role) {
+    }
+
+    private Placement placement(SignupRequest.JoinType joinType, Long departmentId, Long jobGradeId,
+            String companyName, String inviteCode) {
+        return switch (joinType) {
+            case DEMO -> demoPlacement(departmentId, jobGradeId);
+            case NEW_COMPANY -> newCompanyPlacement(companyName);
+            case INVITE -> invitePlacement(inviteCode);
+        };
+    }
+
     // 체험 회사 참여. 부서·직급은 체험 회사 것만 허용.
-    private Membership joinDemoCompany(UserAccount userAccount, SignupRequest request) {
+    private Placement demoPlacement(Long departmentId, Long jobGradeId) {
         Company demo = demoCompany();
-        Department department = request.departmentId() == null ? null
-                : departmentRepository.findById(request.departmentId())
+        Department department = departmentId == null ? null
+                : departmentRepository.findById(departmentId)
                         .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
                         .orElseThrow(() -> new AuthException("AUTH_DEPARTMENT_INVALID", "선택한 부서를 찾을 수 없습니다."));
-        JobGrade jobGrade = request.jobGradeId() == null ? null
-                : jobGradeRepository.findById(request.jobGradeId())
+        JobGrade jobGrade = jobGradeId == null ? null
+                : jobGradeRepository.findById(jobGradeId)
                         .filter(found -> found.getCompany().getId().equals(demo.getId()) && found.isEnabled())
                         .orElseThrow(() -> new AuthException("AUTH_JOB_GRADE_INVALID", "선택한 직급을 찾을 수 없습니다."));
-        Membership membership = new Membership(demo, userAccount, department, Role.USER);
-        if (jobGrade != null) {
-            membership.updateProfile(department, jobGrade, null, null, null, Role.USER);
-        }
-        return membership;
+        return new Placement(demo, department, jobGrade, null, Role.USER);
     }
 
     // 새 회사 만들기. 만든 사람이 관리자이자 "대표" 직급·직책을 가짐. 기본 부서 하나를 함께 생성.
-    private Membership createCompanyAsOwner(UserAccount userAccount, String companyName) {
+    private Placement newCompanyPlacement(String companyName) {
         String name = companyName == null ? "" : companyName.trim();
         if (name.isEmpty()) {
             throw new AuthException("AUTH_COMPANY_NAME_REQUIRED", "회사 이름을 입력해 주세요.");
@@ -221,17 +233,44 @@ public class AuthService {
         Department department = departmentRepository.save(new Department(company, "경영지원"));
         JobGrade owner = jobGradeRepository.save(new JobGrade(company, "대표", 1));
         jobGradeRepository.save(new JobGrade(company, "사원", 2));
-        Membership membership = new Membership(company, userAccount, department, Role.ADMIN);
-        membership.updateProfile(department, owner, "대표", null, null, Role.ADMIN);
-        return membership;
+        return new Placement(company, department, owner, "대표", Role.ADMIN);
     }
 
     // 초대 코드로 참여. 코드는 관리자가 발급한 것만 유효.
-    private Membership joinByInviteCode(UserAccount userAccount, String inviteCode) {
+    private Placement invitePlacement(String inviteCode) {
         String code = inviteCode == null ? "" : inviteCode.trim().toUpperCase(Locale.ROOT);
         Company company = companyRepository.findByInviteCode(code)
                 .orElseThrow(() -> new AuthException("AUTH_INVITE_CODE_INVALID", "초대 코드가 올바르지 않습니다."));
-        return new Membership(company, userAccount, null, Role.USER);
+        return new Placement(company, null, null, null, Role.USER);
+    }
+
+    // 회사 옮기기. 이전 회사의 채팅방·즐겨찾기·주소록 그룹을 모두 정리한 뒤 소속을 바꾸고, 회사 ID가 든 토큰을 새로 발급.
+    @Transactional
+    public AuthResult moveCompany(Long membershipId, CompanyMoveRequest request) {
+        Membership membership = membershipRepository.findById(membershipId)
+                .orElseThrow(InvalidAuthenticationException::new);
+        Placement placement = placement(request.joinType(), request.departmentId(), request.jobGradeId(),
+                request.companyName(), request.inviteCode());
+        if (placement.company().getId().equals(membership.getCompany().getId())) {
+            throw new AuthException("AUTH_COMPANY_SAME", "이미 그 회사에 속해 있습니다.");
+        }
+        Long previousCompanyId = membership.getCompany().getId();
+
+        chatRoomService.leaveAllForCompanyMove(membershipId);
+        memberFavoriteRepository.deleteAll(memberFavoriteRepository.findByOwnerMembershipId(membershipId));
+        memberFavoriteRepository.deleteAll(memberFavoriteRepository.findByTargetMembershipId(membershipId));
+        contactGroupMemberRepository.deleteAll(contactGroupMemberRepository.findByMembershipId(membershipId));
+
+        membership.moveTo(placement.company(), placement.department(), placement.jobGrade(), placement.jobTitle(),
+                placement.role());
+        // 이전 회사 ID가 든 토큰은 모두 끊고 새 토큰을 발급.
+        Instant now = Instant.now();
+        refreshTokenRepository.findByMembershipIdAndRevokedAtIsNull(membershipId).forEach(token -> token.revoke(now));
+        notificationService.create(membershipId, NotificationCategory.SYSTEM, "회사 이동",
+                placement.company().getName() + " 소속으로 옮겼습니다.", null);
+        log.info("Company moved. membershipId={}, fromCompanyId={}, toCompanyId={}, joinType={}", membershipId,
+                previousCompanyId, placement.company().getId(), request.joinType());
+        return issueTokens(membership, false, now.plus(appAuthProperties.refreshTokenExpiration()));
     }
 
     // 복구 코드 재발급. 이전 코드는 즉시 무효.

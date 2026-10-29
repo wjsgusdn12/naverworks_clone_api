@@ -101,6 +101,15 @@ public class Membership {
         this.role = role;
     }
 
+    // 회사 옮기기. 소속·부서·직급·직책·역할을 새 회사 기준으로 한 번에 바꿈.
+    public void moveTo(Company company, Department department, JobGrade jobGrade, String jobTitle, Role role) {
+        this.company = company;
+        this.department = department;
+        this.jobGrade = jobGrade;
+        this.jobTitle = jobTitle;
+        this.role = role;
+    }
+
     // 부재 종료일 설정
     public void setAwayUntil(Instant awayUntil) {
         this.awayUntil = awayUntil;

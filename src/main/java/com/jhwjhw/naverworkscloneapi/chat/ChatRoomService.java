@@ -344,6 +344,34 @@ public class ChatRoomService {
         endWhenEmpty(room);
     }
 
+    // 회사를 옮길 때 이전 회사의 모든 방에서 나감. 방장인 그룹방은 가장 먼저 들어온 다른 구성원에게 방장을 넘김.
+    @Transactional
+    public void leaveAllForCompanyMove(Long membershipId) {
+        for (ChatRoomMember mine : memberRepository.findByMembershipId(membershipId)) {
+            if (!mine.isActive()) {
+                continue;
+            }
+            ChatRoom room = mine.getChatRoom();
+            if (room.getEndedAt() != null) {
+                continue;
+            }
+            if (room.getRoomType() == ChatRoomType.GROUP && room.getOwnerMembership() != null
+                    && room.getOwnerMembership().getId().equals(membershipId)) {
+                memberRepository.findByChatRoomIdAndLeftAtIsNull(room.getId()).stream()
+                        .filter(member -> !member.getMembership().getId().equals(membershipId))
+                        .min(Comparator.comparing(ChatRoomMember::getId))
+                        .ifPresent(next -> room.transferOwner(next.getMembership()));
+            }
+            mine.leave();
+            if (room.getRoomType() == ChatRoomType.GROUP) {
+                systemMessage(room, mine.getMembership(),
+                        mine.getMembership().getUserAccount().getDisplayName() + "님이 채팅방을 나갔습니다.");
+            }
+            endWhenEmpty(room);
+        }
+        log.info("Left all rooms for company move. membershipId={}", membershipId);
+    }
+
     @Transactional
     public void hide(Long requesterId, Long roomId) {
         active(roomId, requesterId).hide();

@@ -15,6 +15,9 @@ public interface MemberFavoriteRepository extends JpaRepository<MemberFavorite, 
     // 즐겨찾기 조회
     List<MemberFavorite> findByOwnerMembershipId(Long ownerMembershipId);
 
+    // 회사 옮기기 정리용: 나를 즐겨찾기한 항목
+    List<MemberFavorite> findByTargetMembershipId(Long targetMembershipId);
+
     // 즐겨찾기 조회
     List<MemberFavorite> findByOwnerMembershipIdAndTargetMembershipIdIn(Long ownerMembershipId, Collection<Long> targetMembershipIds);
 }

@@ -72,6 +72,19 @@ public class AuthController {
                                 authService.recoverReset(request.recoveryCode(), request.newPassword()));
         }
 
+        // 회사 옮기기. 회사 ID가 바뀌므로 새 토큰 쌍을 발급하고 리프레시 쿠키도 교체.
+        @PostMapping("/company/move")
+        public ResponseEntity<ApiResponse<AuthResponse>> moveCompany(@AuthenticationPrincipal Jwt jwt,
+                        @Valid @RequestBody CompanyMoveRequest request) {
+                Long membershipId = jwt.getClaim("membershipId");
+                AuthService.AuthResult result = authService.moveCompany(membershipId, request);
+                return ResponseEntity.ok()
+                                .header(HttpHeaders.SET_COOKIE,
+                                                authService.createRefreshCookie(result.refreshToken(),
+                                                                result.persistentLogin(), result.sessionExpiresAt()).toString())
+                                .body(ApiResponse.success("AUTH_COMPANY_MOVED", "회사를 옮겼습니다.", result.response()));
+        }
+
         // 복구 코드 재발급(로그인 후 내 프로필)
         @PostMapping("/recoveryCode/regenerate")
         public ApiResponse<SignupResponse.RecoveryCode> regenerateRecoveryCode(@AuthenticationPrincipal Jwt jwt) {

@@ -20,6 +20,7 @@ import com.jhwjhw.naverworkscloneapi.identity.repository.AddressBookSearchHistor
 import com.jhwjhw.naverworkscloneapi.identity.repository.MemberFavoriteRepository;
 import com.jhwjhw.naverworkscloneapi.identity.repository.MembershipRepository;
 import com.jhwjhw.naverworkscloneapi.presence.PresenceService;
+import com.jhwjhw.naverworkscloneapi.common.privacy.PersonalInfoMasker;
 import jakarta.persistence.criteria.JoinType;
 import java.time.Duration;
 import java.time.Instant;
@@ -335,8 +336,9 @@ public class AddressBookService {
                 member.getJobGrade() == null ? null : member.getJobGrade().getName(),
                 member.getDepartment() == null ? null : member.getDepartment().getName(),
                 member.getCompany().getName(),
-                member.getUserAccount().getEmail(),
-                member.getPhoneNumber(),
+                // 이메일·전화번호는 가린 값만 내보냄.
+                PersonalInfoMasker.maskEmail(member.getUserAccount().getEmail()),
+                PersonalInfoMasker.maskPhoneNumber(member.getPhoneNumber()),
                 member.getUserAccount().isEnabled(),
                 resolvePresenceStatus(member),
                 member.currentStatusType(),
@@ -350,7 +352,8 @@ public class AddressBookService {
                 member.getId(), member.getUserAccount().getDisplayName(), member.getJobTitle(),
                 member.getJobGrade() == null ? null : member.getJobGrade().getName(),
                 member.getDepartment() == null ? null : member.getDepartment().getName(), member.getCompany().getName(),
-                member.getUserAccount().getEmail(), member.getPhoneNumber(), member.getHiredAt(),
+                PersonalInfoMasker.maskEmail(member.getUserAccount().getEmail()),
+                PersonalInfoMasker.maskPhoneNumber(member.getPhoneNumber()), member.getHiredAt(),
                 member.getUserAccount().isEnabled(), resolvePresenceStatus(member),
                 member.currentStatusType(), member.currentStatusUntil(), favorite);
     }

@@ -62,6 +62,8 @@ public class SecurityConfig {
                         .permitAll()
                         // 가입 화면이 로그인 전에 체험 회사의 부서·직급 목록을 받아 감.
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/signup/options").permitAll()
+                        // 관리자 전용 API(대시보드 등)는 ROLE_ADMIN만 허용.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 // Filter 단계의 401·403도 Controller 예외 응답과 같은 JSON 형식으로 반환.

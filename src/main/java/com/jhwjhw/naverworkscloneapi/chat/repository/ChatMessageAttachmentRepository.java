@@ -30,7 +30,7 @@ public interface ChatMessageAttachmentRepository extends JpaRepository<ChatMessa
     List<ChatMessageAttachment> findGallery(@Param("roomId") Long roomId, @Param("kind") ChatAttachmentKind kind,
             @Param("cursor") Long cursor, Pageable pageable);
 
-    // 상단 검색 [파일]: 내가 참여 중인 방(숨긴 방 포함)에서 파일 이름에 키워드가 들어간 첨부를 최신순으로.
+    // 상단 검색 [파일] 오른쪽 목록: 고른 방(내가 참여 중, 숨긴 방 포함)에서 파일 이름에 키워드가 들어간 첨부를 최신순으로.
     // pattern은 '%키워드%' 형태이며 키워드 속 %·_는 !로 이스케이프돼 글자 그대로 찾음.
     @Query("""
             select a from ChatMessageAttachment a
@@ -42,9 +42,25 @@ public interface ChatMessageAttachmentRepository extends JpaRepository<ChatMessa
                            where member.membership.id = :membershipId and member.leftAt is null)
               and r.endedAt is null and m.deletedAt is null
               and lower(a.originalName) like :pattern escape '!'
+              and r.id = :roomId
               and a.id < :cursor
             order by a.id desc
             """)
     List<ChatMessageAttachment> searchByName(@Param("membershipId") Long membershipId,
-            @Param("pattern") String pattern, @Param("cursor") Long cursor, Pageable pageable);
+            @Param("pattern") String pattern, @Param("roomId") Long roomId, @Param("cursor") Long cursor,
+            Pageable pageable);
+
+    // 상단 검색 [파일] 왼쪽 방 목록: 위와 같은 조건으로 방별 개수를 셈. 최근에 맞는 파일이 있는 방이 위.
+    @Query("""
+            select r.id as roomId, count(a) as matchCount, max(a.id) as latestId
+            from ChatMessageAttachment a join a.chatMessage m join a.chatRoom r
+            where r.id in (select member.chatRoom.id from ChatRoomMember member
+                           where member.membership.id = :membershipId and member.leftAt is null)
+              and r.endedAt is null and m.deletedAt is null
+              and lower(a.originalName) like :pattern escape '!'
+            group by r.id
+            order by max(a.id) desc
+            """)
+    List<ChatSearchRoomCount> countSearchByRoom(@Param("membershipId") Long membershipId,
+            @Param("pattern") String pattern);
 }

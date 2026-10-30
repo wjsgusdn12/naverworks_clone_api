@@ -15,7 +15,7 @@ import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionReposito
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageMentionRow;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
-import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageSearchRoomCount;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatSearchRoomCount;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomMemberRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomNoticeRepository;
@@ -544,17 +544,30 @@ public class ChatRoomService {
 
     // 상단 검색 [메시지] 왼쪽 목록: 참여 중인 모든 방(숨긴 방 포함)을 방별 개수와 함께. 최근에 맞는 메시지가 있는 방이 위.
     @Transactional(readOnly = true)
-    public List<ChatRoomResponse.MessageSearchRoomItem> searchMessageRooms(Long requesterId, String keyword) {
+    public List<ChatRoomResponse.SearchRoomItem> searchMessageRooms(Long requesterId, String keyword) {
         Membership requester = activeMembership(requesterId);
-        List<ChatMessageSearchRoomCount> counts = messageRepository.countSearchByRoom(requesterId,
-                ChatMessageType.TEXT, searchPattern(keyword));
+        return searchRoomItems(requester, messageRepository.countSearchByRoom(requesterId,
+                ChatMessageType.TEXT, searchPattern(keyword)));
+    }
+
+    // 상단 검색 [파일] 왼쪽 목록: 파일 이름에 키워드가 들어간 첨부가 있는 방을 방별 개수와 함께.
+    @Transactional(readOnly = true)
+    public List<ChatRoomResponse.SearchRoomItem> searchFileRooms(Long requesterId, String keyword) {
+        Membership requester = activeMembership(requesterId);
+        return searchRoomItems(requester, attachmentRepository.countSearchByRoom(requesterId,
+                searchPattern(keyword)));
+    }
+
+    // 방별 개수에 방 정보(이름·숨김·인원)를 붙임. 순서는 개수 조회 순서(최근에 맞는 항목이 있는 방이 위) 그대로.
+    private List<ChatRoomResponse.SearchRoomItem> searchRoomItems(Membership requester,
+            List<ChatSearchRoomCount> counts) {
         Map<Long, ChatRoom> roomById = roomRepository
-                .findAllById(counts.stream().map(ChatMessageSearchRoomCount::getRoomId).toList()).stream()
+                .findAllById(counts.stream().map(ChatSearchRoomCount::getRoomId).toList()).stream()
                 .collect(Collectors.toMap(ChatRoom::getId, Function.identity()));
         Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
                 counts.stream().map(count -> roomById.get(count.getRoomId())).toList());
         return counts.stream()
-                .map(count -> new ChatRoomResponse.MessageSearchRoomItem(roomMap.get(count.getRoomId()),
+                .map(count -> new ChatRoomResponse.SearchRoomItem(roomMap.get(count.getRoomId()),
                         count.getMatchCount()))
                 .toList();
     }
@@ -580,19 +593,20 @@ public class ChatRoomService {
                 .toList(), rows.size() > SEARCH_PAGE_SIZE ? page.getLast().getId() : null);
     }
 
-    // 상단 검색 [파일]: 참여 중인 모든 방(숨긴 방 포함)에서 파일 이름에 키워드가 들어간 첨부를 최신순으로 30개씩.
+    // 상단 검색 [파일] 오른쪽 목록: 고른 방에서 파일 이름에 키워드가 들어간 첨부를 최신순으로 30개씩.
     @Transactional(readOnly = true)
-    public ChatRoomResponse.FileSearchPage searchFiles(Long requesterId, String keyword, Long cursor) {
+    public ChatRoomResponse.FileSearchPage searchFiles(Long requesterId, String keyword, Long roomId, Long cursor) {
         Membership requester = activeMembership(requesterId);
         String pattern = searchPattern(keyword);
-        List<ChatMessageAttachment> rows = attachmentRepository.searchByName(requesterId, pattern,
+        // 참여 중인 방인지 먼저 확인(아니면 "채팅방 참가자가 아닙니다").
+        ChatRoom room = active(roomId, requesterId).getChatRoom();
+        List<ChatMessageAttachment> rows = attachmentRepository.searchByName(requesterId, pattern, roomId,
                 cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, SEARCH_PAGE_SIZE + 1));
         List<ChatMessageAttachment> page = rows.stream().limit(SEARCH_PAGE_SIZE).toList();
-        Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
-                page.stream().map(ChatMessageAttachment::getChatRoom).toList());
+        ChatRoomResponse.SearchRoom searchRoom = searchRooms(requester, List.of(room)).get(roomId);
         return new ChatRoomResponse.FileSearchPage(page.stream()
                 .map(item -> new ChatRoomResponse.FileSearchItem(attachment(item), item.getChatMessage().getId(),
-                        roomMap.get(item.getChatRoom().getId()),
+                        searchRoom,
                         item.getChatMessage().getSenderMembership().getUserAccount().getDisplayName(),
                         item.getCreatedAt()))
                 .toList(), rows.size() > SEARCH_PAGE_SIZE ? page.getLast().getId() : null);

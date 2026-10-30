@@ -103,7 +103,7 @@ class ChatSearchTests {
         // 나간 방·남의 방·삭제·시스템 안내·첨부 메시지는 세지 않음.
         var rooms = service.searchMessageRooms(me.getId(), "  회의 ");
         assertThat(rooms).extracting(item -> item.room().id()).containsExactly(direct.getId(), hidden.getId());
-        assertThat(rooms).extracting(ChatRoomResponse.MessageSearchRoomItem::count).containsExactly(2L, 1L);
+        assertThat(rooms).extracting(ChatRoomResponse.SearchRoomItem::count).containsExactly(2L, 1L);
         var directRoom = rooms.getFirst().room();
         assertThat(directRoom.name()).isEqualTo("대화 상대");
         assertThat(directRoom.hidden()).isFalse();
@@ -165,8 +165,16 @@ class ChatSearchTests {
         ChatMessageAttachment deleted = file(direct, friend, "재고관리_삭제됨.xlsx");
         deleted.getChatMessage().deleteContent();
 
-        var page = service.searchFiles(me.getId(), "재고관리", null);
+        // 왼쪽 방 목록: 내가 참여 중인 방만, 삭제된 메시지의 첨부는 세지 않음.
+        assertThat(service.searchFileRooms(me.getId(), "재고관리")).singleElement().satisfies(item -> {
+            assertThat(item.room().id()).isEqualTo(direct.getId());
+            assertThat(item.count()).isEqualTo(1);
+        });
+        // 남의 방은 방 ID를 알아도 검색 불가.
+        assertThatThrownBy(() -> service.searchFiles(me.getId(), "재고관리", others.getId(), null))
+                .isInstanceOf(ChatException.class).hasMessage("채팅방 참가자가 아닙니다.");
 
+        var page = service.searchFiles(me.getId(), "재고관리", direct.getId(), null);
         assertThat(page.items()).singleElement().satisfies(item -> {
             assertThat(item.attachment().id()).isEqualTo(mine.getId());
             assertThat(item.attachment().name()).isEqualTo("바코드_재고관리.xlsx");
@@ -179,7 +187,7 @@ class ChatSearchTests {
     void rejectsBlankOrTooLongKeywordAndUnhidesRoom() {
         assertThatThrownBy(() -> service.searchMessageRooms(me.getId(), "   "))
                 .isInstanceOf(ChatException.class).hasMessage("검색어를 입력해 주세요.");
-        assertThatThrownBy(() -> service.searchFiles(me.getId(), "가".repeat(ChatRoomService.SEARCH_KEYWORD_MAX + 1), null))
+        assertThatThrownBy(() -> service.searchFileRooms(me.getId(), "가".repeat(ChatRoomService.SEARCH_KEYWORD_MAX + 1)))
                 .isInstanceOf(ChatException.class);
 
         ChatRoomMember mine = participants.findByChatRoomIdAndMembershipId(direct.getId(), me.getId()).orElseThrow();

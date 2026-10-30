@@ -77,8 +77,8 @@ public record ChatRoomResponse() {
             Long directMembershipId) {
     }
 
-    // 상단 검색 [메시지] 왼쪽 목록 한 줄: 방과 그 방에서 키워드가 들어간 메시지 수.
-    public record MessageSearchRoomItem(SearchRoom room, long count) {
+    // 상단 검색 왼쪽 방 목록 한 줄: 방과 그 방에서 키워드에 맞는 메시지(또는 파일) 수.
+    public record SearchRoomItem(SearchRoom room, long count) {
     }
 
     // 상단 검색 [메시지] 한 줄. forwarded는 전달받은 메시지인지(화살표 표시).

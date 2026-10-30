@@ -131,7 +131,7 @@ public class ChatRoomController {
 
   // 상단 검색 [메시지] 왼쪽: 키워드가 들어간 메시지가 있는 방과 방별 개수.
   @GetMapping("/search/message/room")
-  public ApiResponse<List<ChatRoomResponse.MessageSearchRoomItem>> searchMessageRooms(
+  public ApiResponse<List<ChatRoomResponse.SearchRoomItem>> searchMessageRooms(
       @AuthenticationPrincipal Jwt jwt, @RequestParam String keyword) {
     return ApiResponse.success("CHAT_MESSAGE_SEARCHED", "메시지를 검색했습니다.",
         service.searchMessageRooms(id(jwt), keyword));
@@ -145,12 +145,20 @@ public class ChatRoomController {
         service.searchMessages(id(jwt), keyword, chatRoomId, cursor));
   }
 
-  // 상단 검색 [파일]: 참여 중인 모든 방에서 파일 이름에 키워드가 들어간 첨부.
+  // 상단 검색 [파일] 왼쪽: 파일 이름에 키워드가 들어간 첨부가 있는 방과 방별 개수.
+  @GetMapping("/search/file/room")
+  public ApiResponse<List<ChatRoomResponse.SearchRoomItem>> searchFileRooms(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam String keyword) {
+    return ApiResponse.success("CHAT_FILE_SEARCHED", "파일을 검색했습니다.",
+        service.searchFileRooms(id(jwt), keyword));
+  }
+
+  // 상단 검색 [파일] 오른쪽: 고른 방에서 파일 이름에 키워드가 들어간 첨부.
   @GetMapping("/search/file")
   public ApiResponse<ChatRoomResponse.FileSearchPage> searchFiles(@AuthenticationPrincipal Jwt jwt,
-      @RequestParam String keyword, @RequestParam(required = false) Long cursor) {
+      @RequestParam String keyword, @RequestParam Long chatRoomId, @RequestParam(required = false) Long cursor) {
     return ApiResponse.success("CHAT_FILE_SEARCHED", "파일을 검색했습니다.",
-        service.searchFiles(id(jwt), keyword, cursor));
+        service.searchFiles(id(jwt), keyword, chatRoomId, cursor));
   }
 
   @PostMapping("/pin/update")

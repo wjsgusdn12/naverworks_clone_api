@@ -82,7 +82,7 @@ public class ApiDashboardService {
 
         ZonedDateTime local = now.atZone(zone);
         Period period = switch (range) {
-            case HOUR -> hourPeriod(local, now);
+            case HOUR -> hourPeriod(now);
             case DAY -> dayPeriod(local, now);
             case WEEK -> weekPeriod(local);
             case MONTH -> monthPeriod(local);
@@ -103,23 +103,25 @@ public class ApiDashboardService {
             ApiDashboardResponse.Ranking ranking) {
     }
 
-    // 이번 시간: 숫자 카드·순위 합계는 1시간 요약, 그래프는 1분 칸 60개(1분 기록이 없는 5분 구간은 5분 칸으로 채움).
-    private Period hourPeriod(ZonedDateTime local, Instant now) {
-        Instant hourStart = local.truncatedTo(ChronoUnit.HOURS).toInstant();
-        MetricsBucket total = hourlyRepository.readTotals(hourStart).getOrDefault(hourStart, new MetricsBucket());
-        long hourFirstMinute = ApiMetricsRecorder.minuteOf(hourStart);
-        long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
+    // 최근 60분: 지금 분을 포함해 1분 칸 60개(정각이 지나도 비지 않고 계속 밀려감).
+    // 숫자 카드·순위 합계도 그래프와 같은 60칸을 더한 값(1분 기록이 없는 5분 구간은 5분 칸으로 채움).
+    private Period hourPeriod(Instant now) {
+        long lastMinute = ApiMetricsRecorder.minuteOf(now);
+        long firstMinute = lastMinute - HOUR_MINUTES + 1;
+        Instant firstStart = Instant.ofEpochSecond(firstMinute * ApiMetricsRecorder.MINUTE_SECONDS);
+        long firstBucket = ApiMetricsRecorder.bucketOf(firstStart);
+        // 첫 칸이 5분 칸 안에서 몇 번째 분인지(5분 칸 경계에 맞춰 묶기 위해)
+        int offset = (int) (firstMinute - firstBucket * MINUTES_PER_BUCKET);
         Map<Long, MetricsBucket> minutes = bucketRepository.read(ApiMetricBucketRepository.Ring.ONE_MINUTE,
-                hourFirstMinute, ApiMetricsRecorder.minuteOf(now));
+                firstMinute, lastMinute);
         Map<Long, MetricsBucket> buckets = bucketRepository.read(ApiMetricBucketRepository.Ring.FIVE_MINUTES,
-                hourFirstBucket, ApiMetricsRecorder.bucketOf(now));
-        FineSeries fine = fineSeries(HOUR_MINUTES, MINUTES_PER_BUCKET, 1, MINUTES_PER_BUCKET,
-                index -> Instant.ofEpochSecond((hourFirstMinute + index) * ApiMetricsRecorder.MINUTE_SECONDS),
-                index -> minutes.get(hourFirstMinute + index), group -> buckets.get(hourFirstBucket + group));
-        ApiDashboardResponse.Ranking ranking = ranking(
-                hourlyRepository.readEndpointTotals(hourStart, hourStart.plus(Duration.ofHours(1))), fine.bins(),
+                firstBucket, ApiMetricsRecorder.bucketOf(now));
+        FineSeries fine = fineSeries(HOUR_MINUTES, offset, MINUTES_PER_BUCKET, 1,
+                index -> Instant.ofEpochSecond((firstMinute + index) * ApiMetricsRecorder.MINUTE_SECONDS),
+                index -> minutes.get(firstMinute + index), group -> buckets.get(firstBucket + group));
+        ApiDashboardResponse.Ranking ranking = ranking(fine.total().getEndpoints(), fine.bins(),
                 names -> fine.series());
-        return new Period(total, fine.points(), ranking);
+        return new Period(fine.total(), fine.points(), ranking);
     }
 
     // 오늘: 숫자 카드·순위 합계는 1시간 요약, 그래프는 5분 칸 288개(5분 기록이 없는 시간은 1시간 요약으로 채움).
@@ -135,7 +137,7 @@ public class ApiDashboardService {
         long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
         Map<Long, MetricsBucket> buckets = bucketRepository.read(ApiMetricBucketRepository.Ring.FIVE_MINUTES,
                 dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
-        FineSeries fine = fineSeries(DAY_BUCKETS, (int) BUCKETS_PER_HOUR, MINUTES_PER_BUCKET, 60,
+        FineSeries fine = fineSeries(DAY_BUCKETS, 0, (int) BUCKETS_PER_HOUR, MINUTES_PER_BUCKET,
                 index -> Instant.ofEpochSecond((dayFirstBucket + index) * ApiMetricsRecorder.BUCKET_SECONDS),
                 index -> buckets.get(dayFirstBucket + index), group -> hours.get(dayStart.plus(Duration.ofHours(group))));
         ApiDashboardResponse.Ranking ranking = ranking(hourlyRepository.readEndpointTotals(dayStart, dayEnd),
@@ -184,22 +186,26 @@ public class ApiDashboardService {
     }
 
     // 잘게 쪼갠 그래프 한 벌: 점, 칸 시작 시각, API별 [호출 수, 걸린 시간 합](순위 옆 작은 추이선용),
-    // 큰 단위로 채운 묶음 번호(fallbackGroups).
+    // 큰 단위로 채운 묶음 번호(fallbackGroups), 모든 칸을 더한 합계(total).
     private record FineSeries(List<ApiDashboardResponse.TrendPoint> points, List<Instant> bins,
-            Map<String, long[][]> series, Set<Integer> fallbackGroups) {
+            Map<String, long[][]> series, Set<Integer> fallbackGroups, MetricsBucket total) {
     }
 
-    // count개의 작은 칸으로 그래프를 만듦. perGroup개씩 묶은 구간에 작은 칸 기록이 하나도 없고
-    // 큰 칸(group) 기록이 있으면, 큰 칸 값을 그 구간 칸마다 고르게 나눠 채움(추정값, 나눈 칸을 더하면 원래 합계).
-    private static FineSeries fineSeries(int count, int perGroup, int fineMinutes, int groupMinutes,
+    // count개의 작은 칸으로 그래프를 만듦. 큰 칸(group) 하나는 작은 칸 perGroup개이고,
+    // 첫 칸은 첫 큰 칸 안에서 offset번째 자리(큰 칸 경계에 맞춰 묶음, 최근 60분처럼 경계 중간에서 시작할 때).
+    // 묶음에 작은 칸 기록이 하나도 없고 큰 칸 기록이 있으면, 큰 칸 값을 perGroup칸으로 고르게 나눠 그 구간 칸에 채움(추정값).
+    private static FineSeries fineSeries(int count, int offset, int perGroup, int fineMinutes,
             IntFunction<Instant> startOf, IntFunction<MetricsBucket> fineAt, IntFunction<MetricsBucket> groupAt) {
         List<ApiDashboardResponse.TrendPoint> points = new ArrayList<>();
         List<Instant> bins = new ArrayList<>();
         Map<String, long[][]> series = new HashMap<>();
         Set<Integer> fallbackGroups = new HashSet<>();
-        for (int group = 0; group * perGroup < count; group++) {
-            int first = group * perGroup;
-            int last = Math.min(first + perGroup, count);
+        MetricsBucket total = new MetricsBucket();
+        for (int group = 0; group * perGroup < count + offset; group++) {
+            // 이 큰 칸의 첫 자리가 그래프에서 몇 번째 칸인지(첫 묶음은 음수일 수 있음)
+            int groupFirst = group * perGroup - offset;
+            int first = Math.max(0, groupFirst);
+            int last = Math.min(groupFirst + perGroup, count);
             boolean fineEmpty = IntStream.range(first, last)
                     .allMatch(index -> fineAt.apply(index) == null || fineAt.apply(index).isEmpty());
             MetricsBucket coarse = groupAt.apply(group);
@@ -209,21 +215,23 @@ public class ApiDashboardService {
                 Instant start = startOf.apply(index);
                 bins.add(start);
                 if (useCoarse) {
-                    MetricsBucket cell = splitBucket(coarse, last - first, index - first);
+                    MetricsBucket cell = splitBucket(coarse, perGroup, index - groupFirst);
                     // 나눈 칸은 응답 시간 구간도 따로 나눠 p95가 흔들리므로 그 구간 전체의 p95를 그대로 씀.
                     points.add(new ApiDashboardResponse.TrendPoint(start, cell.getCount(),
                             cell.getClientErrors() + cell.getServerErrors(),
                             average(cell.getDurationSumMs(), cell.getCount()),
                             cell.getCount() == 0 ? 0 : coarse.p95Ms(), fineMinutes, latencyOf(cell), true));
                     collect(series, cell, index, count);
+                    total.add(cell);
                     continue;
                 }
                 MetricsBucket data = fineAt.apply(index) == null ? new MetricsBucket() : fineAt.apply(index);
                 points.add(point(start, data, fineMinutes));
                 collect(series, data, index, count);
+                total.add(data);
             }
         }
-        return new FineSeries(points, bins, series, fallbackGroups);
+        return new FineSeries(points, bins, series, fallbackGroups, total);
     }
 
     // 오늘 작은 추이선: 1시간 요약으로 채운 시간은 1시간 합계 행에 API별 값이 없으므로 DB의 API별 1시간 기록을 더함.

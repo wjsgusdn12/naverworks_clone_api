@@ -83,7 +83,7 @@ class ApiDashboardTests {
         mvc.perform(get("/api/v1/chatRoom")).andExpect(status().isUnauthorized());
         mvc.perform(get(ApiDashboardController.PATH).header("Authorization", bearer(admin)));
 
-        // 이번 시간: 1분 칸 60개(정각~59분), 점들을 더하면 숫자 카드 합계.
+        // 최근 60분: 지금 분까지 1분 칸 60개(정각과 무관하게 밀려감), 점들을 더하면 숫자 카드 합계.
         ApiDashboardResponse hour = dashboardService.dashboard(ApiDashboardService.Range.HOUR);
         assertThat(hour.range()).isEqualTo("HOUR");
         assertThat(hour.mode()).isEqualTo("LOCAL");
@@ -92,8 +92,11 @@ class ApiDashboardTests {
         assertThat(hour.summary().clientErrors()).isGreaterThanOrEqualTo(1);
         java.time.ZoneId seoul = java.time.ZoneId.of(hour.zone());
         assertThat(hour.trend()).hasSize(ApiDashboardService.HOUR_MINUTES);
-        assertThat(hour.trend().getFirst().startAt().atZone(seoul).getMinute()).isZero();
-        assertThat(hour.trend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(59);
+        assertThat(java.time.Duration.between(hour.trend().getFirst().startAt(), hour.trend().getLast().startAt()))
+                .isEqualTo(java.time.Duration.ofMinutes(59));
+        assertThat(hour.trend().getLast().startAt()).isBeforeOrEqualTo(hour.generatedAt());
+        assertThat(java.time.Duration.between(hour.trend().getLast().startAt(), hour.generatedAt()))
+                .isLessThan(java.time.Duration.ofMinutes(1));
         assertThat(hour.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(hour.summary().requests());
         // 히트맵용 응답 시간 구간별 개수(9칸)를 더하면 그 칸의 요청 수.

@@ -97,20 +97,37 @@ class ChatSearchTests {
         text(direct, friend, "회의 끝").deleteContent();
         messages.save(new ChatMessage(direct, me, "회의 안내(시스템)", ChatMessageType.SYSTEM));
         file(direct, friend, "회의록.pdf");
+        ChatMessage second = text(direct, me, "회의 시간 확인");
 
-        var page = service.searchMessages(me.getId(), "  회의 ", null);
+        // 왼쪽 방 목록: 참여 중인 방(숨긴 방 포함)만, 최근에 맞는 메시지가 있는 방이 위.
+        // 나간 방·남의 방·삭제·시스템 안내·첨부 메시지는 세지 않음.
+        var rooms = service.searchMessageRooms(me.getId(), "  회의 ");
+        assertThat(rooms).extracting(item -> item.room().id()).containsExactly(direct.getId(), hidden.getId());
+        assertThat(rooms).extracting(ChatRoomResponse.MessageSearchRoomItem::count).containsExactly(2L, 1L);
+        var directRoom = rooms.getFirst().room();
+        assertThat(directRoom.name()).isEqualTo("대화 상대");
+        assertThat(directRoom.hidden()).isFalse();
+        assertThat(directRoom.directMembershipId()).isEqualTo(friend.getId());
+        assertThat(directRoom.memberCount()).isEqualTo(2);
+        var hiddenRoom = rooms.getLast().room();
+        assertThat(hiddenRoom.name()).isEqualTo("숨긴 방");
+        assertThat(hiddenRoom.hidden()).isTrue();
+        assertThat(hiddenRoom.memberCount()).isEqualTo(3);
 
-        // 최신순, 참여 중인 방(숨긴 방 포함)만. 나간 방·남의 방·삭제·시스템 안내·첨부 메시지는 제외.
+        // 오른쪽 목록: 고른 방의 메시지만 최신순.
+        var page = service.searchMessages(me.getId(), "회의", direct.getId(), null);
         assertThat(page.items()).extracting(ChatRoomResponse.MessageSearchItem::messageId)
-                .containsExactly(inHidden.getId(), inDirect.getId());
+                .containsExactly(second.getId(), inDirect.getId());
         assertThat(page.nextCursor()).isNull();
-        var hiddenItem = page.items().getFirst();
-        assertThat(hiddenItem.room().name()).isEqualTo("숨긴 방");
-        assertThat(hiddenItem.room().hidden()).isTrue();
-        assertThat(hiddenItem.senderName()).isEqualTo("남");
-        // 1:1 방 이름은 상대 이름.
-        assertThat(page.items().getLast().room().name()).isEqualTo("대화 상대");
-        assertThat(page.items().getLast().room().hidden()).isFalse();
+        assertThat(service.searchMessages(me.getId(), "회의", hidden.getId(), null).items())
+                .singleElement().satisfies(item -> {
+                    assertThat(item.messageId()).isEqualTo(inHidden.getId());
+                    assertThat(item.senderName()).isEqualTo("남");
+                    assertThat(item.forwarded()).isFalse();
+                });
+        // 참여하지 않은(나간) 방은 방 ID를 알아도 검색 불가.
+        assertThatThrownBy(() -> service.searchMessages(me.getId(), "회의", left.getId(), null))
+                .isInstanceOf(ChatException.class).hasMessage("채팅방 참가자가 아닙니다.");
     }
 
     @Test
@@ -119,21 +136,21 @@ class ChatSearchTests {
         text(direct, friend, "진행률 1000 완료");
         ChatMessage english = text(direct, friend, "Release NOTE 정리");
 
-        assertThat(service.searchMessages(me.getId(), "0%", null).items())
+        assertThat(service.searchMessages(me.getId(), "0%", direct.getId(), null).items())
                 .extracting(ChatRoomResponse.MessageSearchItem::messageId).containsExactly(percent.getId());
-        assertThat(service.searchMessages(me.getId(), "release note", null).items())
+        assertThat(service.searchMessages(me.getId(), "release note", direct.getId(), null).items())
                 .extracting(ChatRoomResponse.MessageSearchItem::messageId).containsExactly(english.getId());
-        assertThat(service.searchMessages(me.getId(), "_", null).items()).isEmpty();
+        assertThat(service.searchMessages(me.getId(), "_", direct.getId(), null).items()).isEmpty();
     }
 
     @Test
     void pagesByThirty() {
         IntStream.range(0, ChatRoomService.SEARCH_PAGE_SIZE + 5).forEach(index -> text(direct, friend, "반복 " + index));
 
-        var first = service.searchMessages(me.getId(), "반복", null);
+        var first = service.searchMessages(me.getId(), "반복", direct.getId(), null);
         assertThat(first.items()).hasSize(ChatRoomService.SEARCH_PAGE_SIZE);
         assertThat(first.nextCursor()).isNotNull();
-        var second = service.searchMessages(me.getId(), "반복", first.nextCursor());
+        var second = service.searchMessages(me.getId(), "반복", direct.getId(), first.nextCursor());
         assertThat(second.items()).hasSize(5);
         assertThat(second.nextCursor()).isNull();
         assertThat(second.items().getFirst().messageId()).isLessThan(first.items().getLast().messageId());
@@ -160,7 +177,7 @@ class ChatSearchTests {
 
     @Test
     void rejectsBlankOrTooLongKeywordAndUnhidesRoom() {
-        assertThatThrownBy(() -> service.searchMessages(me.getId(), "   ", null))
+        assertThatThrownBy(() -> service.searchMessageRooms(me.getId(), "   "))
                 .isInstanceOf(ChatException.class).hasMessage("검색어를 입력해 주세요.");
         assertThatThrownBy(() -> service.searchFiles(me.getId(), "가".repeat(ChatRoomService.SEARCH_KEYWORD_MAX + 1), null))
                 .isInstanceOf(ChatException.class);

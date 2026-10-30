@@ -46,11 +46,28 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
               and r.endedAt is null and m.deletedAt is null and m.messageType = :type
               and lower(m.content) like :pattern escape '!'
               and not exists (select a.id from ChatMessageAttachment a where a.chatMessage = m)
+              and r.id = :roomId
               and m.id < :cursor
             order by m.id desc
             """)
     List<ChatMessage> searchByContent(@Param("membershipId") Long membershipId, @Param("type") ChatMessageType type,
-            @Param("pattern") String pattern, @Param("cursor") Long cursor, Pageable pageable);
+            @Param("pattern") String pattern, @Param("roomId") Long roomId, @Param("cursor") Long cursor,
+            Pageable pageable);
+
+    // 상단 검색 [메시지] 왼쪽 방 목록: 위와 같은 조건으로 방별 개수를 셈. 최근에 맞는 메시지가 있는 방이 위.
+    @Query("""
+            select r.id as roomId, count(m) as matchCount, max(m.id) as latestMessageId
+            from ChatMessage m join m.chatRoom r
+            where r.id in (select member.chatRoom.id from ChatRoomMember member
+                           where member.membership.id = :membershipId and member.leftAt is null)
+              and r.endedAt is null and m.deletedAt is null and m.messageType = :type
+              and lower(m.content) like :pattern escape '!'
+              and not exists (select a.id from ChatMessageAttachment a where a.chatMessage = m)
+            group by r.id
+            order by max(m.id) desc
+            """)
+    List<ChatMessageSearchRoomCount> countSearchByRoom(@Param("membershipId") Long membershipId,
+            @Param("type") ChatMessageType type, @Param("pattern") String pattern);
 
     // 페이지에 담긴 메시지들의 멘션 대상을 쿼리 한 번으로 조회(N+1 방지).
     // mentionedMembershipIds는 별도 테이블이라 메시지마다 getter를 부르면 건수만큼 쿼리가 나감.

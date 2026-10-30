@@ -15,6 +15,7 @@ import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionReposito
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageMentionRow;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageRepository;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageSearchRoomCount;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReadSummary;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomMemberRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatRoomNoticeRepository;
@@ -541,22 +542,41 @@ public class ChatRoomService {
                 .toList(), nextCursor);
     }
 
-    // 상단 검색 [메시지]: 참여 중인 모든 방(숨긴 방 포함)에서 키워드가 들어간 메시지를 최신순으로 30개씩.
+    // 상단 검색 [메시지] 왼쪽 목록: 참여 중인 모든 방(숨긴 방 포함)을 방별 개수와 함께. 최근에 맞는 메시지가 있는 방이 위.
     @Transactional(readOnly = true)
-    public ChatRoomResponse.MessageSearchPage searchMessages(Long requesterId, String keyword, Long cursor) {
+    public List<ChatRoomResponse.MessageSearchRoomItem> searchMessageRooms(Long requesterId, String keyword) {
+        Membership requester = activeMembership(requesterId);
+        List<ChatMessageSearchRoomCount> counts = messageRepository.countSearchByRoom(requesterId,
+                ChatMessageType.TEXT, searchPattern(keyword));
+        Map<Long, ChatRoom> roomById = roomRepository
+                .findAllById(counts.stream().map(ChatMessageSearchRoomCount::getRoomId).toList()).stream()
+                .collect(Collectors.toMap(ChatRoom::getId, Function.identity()));
+        Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
+                counts.stream().map(count -> roomById.get(count.getRoomId())).toList());
+        return counts.stream()
+                .map(count -> new ChatRoomResponse.MessageSearchRoomItem(roomMap.get(count.getRoomId()),
+                        count.getMatchCount()))
+                .toList();
+    }
+
+    // 상단 검색 [메시지] 오른쪽 목록: 고른 방에서 키워드가 들어간 메시지를 최신순으로 30개씩.
+    @Transactional(readOnly = true)
+    public ChatRoomResponse.MessageSearchPage searchMessages(Long requesterId, String keyword, Long roomId,
+            Long cursor) {
         Membership requester = activeMembership(requesterId);
         String pattern = searchPattern(keyword);
+        // 참여 중인 방인지 먼저 확인(아니면 "채팅방 참가자가 아닙니다").
+        ChatRoom room = active(roomId, requesterId).getChatRoom();
         // 한 개 더 읽어 다음 페이지가 있는지 판단.
         List<ChatMessage> rows = messageRepository.searchByContent(requesterId, ChatMessageType.TEXT, pattern,
-                cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, SEARCH_PAGE_SIZE + 1));
+                roomId, cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, SEARCH_PAGE_SIZE + 1));
         List<ChatMessage> page = rows.stream().limit(SEARCH_PAGE_SIZE).toList();
-        Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
-                page.stream().map(ChatMessage::getChatRoom).toList());
+        ChatRoomResponse.SearchRoom searchRoom = searchRooms(requester, List.of(room)).get(roomId);
         return new ChatRoomResponse.MessageSearchPage(page.stream()
-                .map(message -> new ChatRoomResponse.MessageSearchItem(message.getId(),
-                        roomMap.get(message.getChatRoom().getId()), message.getSenderMembership().getId(),
+                .map(message -> new ChatRoomResponse.MessageSearchItem(message.getId(), searchRoom,
+                        message.getSenderMembership().getId(),
                         message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
-                        message.getCreatedAt()))
+                        message.getForwardedFromMessageId() != null, message.getCreatedAt()))
                 .toList(), rows.size() > SEARCH_PAGE_SIZE ? page.getLast().getId() : null);
     }
 
@@ -607,15 +627,17 @@ public class ChatRoomService {
             boolean hidden = members.stream()
                     .anyMatch(member -> member.getMembership().getId().equals(requester.getId())
                             && member.getHiddenAt() != null);
+            Membership directMember = room.getRoomType() != ChatRoomType.DIRECT ? null
+                    : members.stream().map(ChatRoomMember::getMembership)
+                            .filter(membership -> !membership.getId().equals(requester.getId()))
+                            .findFirst().orElse(null);
             String name = switch (room.getRoomType()) {
                 case GROUP -> room.getName() == null || room.getName().isBlank() ? "이름 없는 그룹" : room.getName();
                 case SELF -> requester.getUserAccount().getDisplayName();
-                case DIRECT -> members.stream()
-                        .filter(member -> !member.getMembership().getId().equals(requester.getId()))
-                        .map(member -> member.getMembership().getUserAccount().getDisplayName())
-                        .findFirst().orElse("대화 상대 없음");
+                case DIRECT -> directMember == null ? "대화 상대 없음" : directMember.getUserAccount().getDisplayName();
             };
-            result.put(roomId, new ChatRoomResponse.SearchRoom(roomId, room.getRoomType().name(), name, hidden));
+            result.put(roomId, new ChatRoomResponse.SearchRoom(roomId, room.getRoomType().name(), name, hidden,
+                    members.size(), directMember == null ? null : directMember.getId()));
         });
         return result;
     }

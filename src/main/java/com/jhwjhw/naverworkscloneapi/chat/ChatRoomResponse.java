@@ -71,13 +71,19 @@ public record ChatRoomResponse() {
     }
 
     // 상단 검색 결과가 속한 방. name은 화면에 보일 이름(그룹명·1:1 상대 이름·나와의 채팅은 내 이름),
-    // hidden은 내가 목록에서 숨긴 방인지(누르면 숨김 해제 후 열기).
-    public record SearchRoom(Long id, String type, String name, boolean hidden) {
+    // hidden은 내가 목록에서 숨긴 방인지(누르면 숨김 해제 후 열기), memberCount는 참여 인원,
+    // directMembershipId는 1:1 방 상대(아바타의 접속 상태 표시용, 그 외 방은 null).
+    public record SearchRoom(Long id, String type, String name, boolean hidden, int memberCount,
+            Long directMembershipId) {
     }
 
-    // 상단 검색 [메시지] 한 줄.
+    // 상단 검색 [메시지] 왼쪽 목록 한 줄: 방과 그 방에서 키워드가 들어간 메시지 수.
+    public record MessageSearchRoomItem(SearchRoom room, long count) {
+    }
+
+    // 상단 검색 [메시지] 한 줄. forwarded는 전달받은 메시지인지(화살표 표시).
     public record MessageSearchItem(Long messageId, SearchRoom room, Long senderMembershipId, String senderName,
-            String content, Instant createdAt) {
+            String content, boolean forwarded, Instant createdAt) {
     }
 
     public record MessageSearchPage(List<MessageSearchItem> items, Long nextCursor) {

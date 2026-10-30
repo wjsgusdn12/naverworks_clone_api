@@ -129,12 +129,20 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_ROOM_UNHIDDEN", "채팅방을 다시 표시했습니다.", null);
   }
 
-  // 상단 검색 [메시지]: 참여 중인 모든 방에서 키워드가 들어간 메시지. cursor는 이전 페이지의 nextCursor.
+  // 상단 검색 [메시지] 왼쪽: 키워드가 들어간 메시지가 있는 방과 방별 개수.
+  @GetMapping("/search/message/room")
+  public ApiResponse<List<ChatRoomResponse.MessageSearchRoomItem>> searchMessageRooms(
+      @AuthenticationPrincipal Jwt jwt, @RequestParam String keyword) {
+    return ApiResponse.success("CHAT_MESSAGE_SEARCHED", "메시지를 검색했습니다.",
+        service.searchMessageRooms(id(jwt), keyword));
+  }
+
+  // 상단 검색 [메시지] 오른쪽: 고른 방에서 키워드가 들어간 메시지. cursor는 이전 페이지의 nextCursor.
   @GetMapping("/search/message")
   public ApiResponse<ChatRoomResponse.MessageSearchPage> searchMessages(@AuthenticationPrincipal Jwt jwt,
-      @RequestParam String keyword, @RequestParam(required = false) Long cursor) {
+      @RequestParam String keyword, @RequestParam Long chatRoomId, @RequestParam(required = false) Long cursor) {
     return ApiResponse.success("CHAT_MESSAGE_SEARCHED", "메시지를 검색했습니다.",
-        service.searchMessages(id(jwt), keyword, cursor));
+        service.searchMessages(id(jwt), keyword, chatRoomId, cursor));
   }
 
   // 상단 검색 [파일]: 참여 중인 모든 방에서 파일 이름에 키워드가 들어간 첨부.

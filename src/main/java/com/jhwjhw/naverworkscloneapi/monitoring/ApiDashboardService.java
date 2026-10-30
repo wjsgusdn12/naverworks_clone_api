@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -40,24 +41,46 @@ public class ApiDashboardService {
         MetricsBucket lastHour = new MetricsBucket();
         MetricsBucket lastDay = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> trend = new ArrayList<>();
-        // 24시간을 1시간(5분 칸 12개)씩 묶어 추이를 만듦.
+        List<ApiDashboardResponse.TrendPoint> recentTrend = new ArrayList<>();
+        // 엔드포인트별 1시간 단위 [호출 수, 걸린 시간 합] — 목록 옆 작은 추이선용.
+        Map<String, long[][]> hourlyByEndpoint = new HashMap<>();
+        // 24시간을 1시간(5분 칸 12개)씩 묶어 추이를 만듦. 마지막 1시간은 5분 칸 그대로도 담음.
         for (int hour = 0; hour < 24; hour++) {
             MetricsBucket hourly = new MetricsBucket();
             long start = from + hour * BUCKETS_PER_HOUR;
             for (long bucket = start; bucket < start + BUCKETS_PER_HOUR; bucket++) {
                 MetricsBucket data = buckets.get(bucket);
+                if (bucket > current - BUCKETS_PER_HOUR) {
+                    recentTrend.add(point(bucket, data == null ? new MetricsBucket() : data));
+                }
                 if (data == null) continue;
                 hourly.add(data);
                 if (bucket > current - BUCKETS_PER_HOUR) lastHour.add(data);
             }
             lastDay.add(hourly);
-            trend.add(new ApiDashboardResponse.TrendPoint(Instant.ofEpochSecond(start * ApiMetricsRecorder.BUCKET_SECONDS),
-                    hourly.getCount(), hourly.getClientErrors() + hourly.getServerErrors()));
+            trend.add(point(start, hourly));
+            int hourIndex = hour;
+            hourly.getEndpoints().forEach((endpoint, stats) -> {
+                long[][] series = hourlyByEndpoint.computeIfAbsent(endpoint, key -> new long[2][24]);
+                series[0][hourIndex] = stats.getCount();
+                series[1][hourIndex] = stats.getDurationSumMs();
+            });
         }
 
         List<ApiDashboardResponse.EndpointStat> endpoints = lastDay.getEndpoints().entrySet().stream()
-                .map(entry -> new ApiDashboardResponse.EndpointStat(entry.getKey(), entry.getValue().getCount(),
-                        entry.getValue().getErrors(), average(entry.getValue().getDurationSumMs(), entry.getValue().getCount())))
+                .map(entry -> {
+                    long[][] series = hourlyByEndpoint.getOrDefault(entry.getKey(), new long[2][24]);
+                    List<Long> hourlyRequests = new ArrayList<>();
+                    List<Long> hourlyAvgMs = new ArrayList<>();
+                    for (int hour = 0; hour < 24; hour++) {
+                        hourlyRequests.add(series[0][hour]);
+                        hourlyAvgMs.add(average(series[1][hour], series[0][hour]));
+                    }
+                    return new ApiDashboardResponse.EndpointStat(entry.getKey(), entry.getValue().getCount(),
+                            entry.getValue().getErrors(),
+                            average(entry.getValue().getDurationSumMs(), entry.getValue().getCount()), hourlyRequests,
+                            hourlyAvgMs);
+                })
                 .toList();
         List<ApiDashboardResponse.EndpointStat> top = endpoints.stream()
                 .sorted(Comparator.comparingLong(ApiDashboardResponse.EndpointStat::requests).reversed())
@@ -75,7 +98,14 @@ public class ApiDashboardService {
                 .toList();
 
         return new ApiDashboardResponse(now, store.mode(), databaseStatus(), servers, summary(lastHour),
-                summary(lastDay), trend, top, slow);
+                summary(lastDay), trend, recentTrend, top, slow);
+    }
+
+    // startBucket부터 시작하는 구간 하나를 추이 한 점으로.
+    private static ApiDashboardResponse.TrendPoint point(long startBucket, MetricsBucket data) {
+        return new ApiDashboardResponse.TrendPoint(Instant.ofEpochSecond(startBucket * ApiMetricsRecorder.BUCKET_SECONDS),
+                data.getCount(), data.getClientErrors() + data.getServerErrors(),
+                average(data.getDurationSumMs(), data.getCount()), data.p95Ms());
     }
 
     private static ApiDashboardResponse.Summary summary(MetricsBucket bucket) {

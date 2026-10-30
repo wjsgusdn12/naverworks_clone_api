@@ -90,6 +90,11 @@ class ApiDashboardTests {
         });
         assertThat(dashboard.topEndpoints()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
         assertThat(dashboard.trend()).hasSize(24);
+        assertThat(dashboard.recentTrend()).hasSize(12);
+        // 추이의 마지막 점(지금 시간대)에 방금 요청이 들어가 있고, 엔드포인트별 작은 추이선도 24칸.
+        assertThat(dashboard.recentTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.lastHour().requests());
+        assertThat(dashboard.topEndpoints().getFirst().hourlyRequests()).hasSize(24);
         assertThat(dashboard.servers()).anyMatch(ApiDashboardResponse.Server::current);
     }
 

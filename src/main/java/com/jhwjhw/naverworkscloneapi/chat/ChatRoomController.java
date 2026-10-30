@@ -122,6 +122,29 @@ public class ChatRoomController {
     return ApiResponse.success("CHAT_ROOM_HIDDEN", "채팅방을 숨겼습니다.", null);
   }
 
+  // 숨긴 방을 목록에 다시 보이게 함(상단 검색 결과에서 숨긴 방을 열 때).
+  @PostMapping("/unhide")
+  public ApiResponse<Void> unhide(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
+    service.unhide(id(jwt), chatRoomId);
+    return ApiResponse.success("CHAT_ROOM_UNHIDDEN", "채팅방을 다시 표시했습니다.", null);
+  }
+
+  // 상단 검색 [메시지]: 참여 중인 모든 방에서 키워드가 들어간 메시지. cursor는 이전 페이지의 nextCursor.
+  @GetMapping("/search/message")
+  public ApiResponse<ChatRoomResponse.MessageSearchPage> searchMessages(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam String keyword, @RequestParam(required = false) Long cursor) {
+    return ApiResponse.success("CHAT_MESSAGE_SEARCHED", "메시지를 검색했습니다.",
+        service.searchMessages(id(jwt), keyword, cursor));
+  }
+
+  // 상단 검색 [파일]: 참여 중인 모든 방에서 파일 이름에 키워드가 들어간 첨부.
+  @GetMapping("/search/file")
+  public ApiResponse<ChatRoomResponse.FileSearchPage> searchFiles(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam String keyword, @RequestParam(required = false) Long cursor) {
+    return ApiResponse.success("CHAT_FILE_SEARCHED", "파일을 검색했습니다.",
+        service.searchFiles(id(jwt), keyword, cursor));
+  }
+
   @PostMapping("/pin/update")
   public ApiResponse<Void> pin(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId) {
     service.togglePin(id(jwt), chatRoomId);

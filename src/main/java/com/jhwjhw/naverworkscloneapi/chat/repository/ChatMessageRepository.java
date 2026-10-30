@@ -5,6 +5,7 @@ import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -31,6 +32,25 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     List<ChatMessage> findTop50ByChatRoomIdAndIdGreaterThanOrderByIdAsc(Long chatRoomId, Long cursor);
 
     boolean existsByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
+
+    // 상단 검색 [메시지]: 내가 참여 중인 방(숨긴 방 포함)에서 키워드가 들어간 일반 메시지를 최신순으로.
+    // 삭제된 메시지·시스템 안내·첨부 메시지(파일 탭에서 찾음)는 제외.
+    // pattern은 '%키워드%' 형태이며 키워드 속 %·_는 !로 이스케이프돼 글자 그대로 찾음.
+    @Query("""
+            select m from ChatMessage m
+            join fetch m.senderMembership s
+            join fetch s.userAccount
+            join fetch m.chatRoom r
+            where r.id in (select member.chatRoom.id from ChatRoomMember member
+                           where member.membership.id = :membershipId and member.leftAt is null)
+              and r.endedAt is null and m.deletedAt is null and m.messageType = :type
+              and lower(m.content) like :pattern escape '!'
+              and not exists (select a.id from ChatMessageAttachment a where a.chatMessage = m)
+              and m.id < :cursor
+            order by m.id desc
+            """)
+    List<ChatMessage> searchByContent(@Param("membershipId") Long membershipId, @Param("type") ChatMessageType type,
+            @Param("pattern") String pattern, @Param("cursor") Long cursor, Pageable pageable);
 
     // 페이지에 담긴 메시지들의 멘션 대상을 쿼리 한 번으로 조회(N+1 방지).
     // mentionedMembershipIds는 별도 테이블이라 메시지마다 getter를 부르면 건수만큼 쿼리가 나감.

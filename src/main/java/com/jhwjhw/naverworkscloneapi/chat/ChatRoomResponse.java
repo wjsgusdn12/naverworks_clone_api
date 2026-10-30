@@ -70,6 +70,27 @@ public record ChatRoomResponse() {
     public record AttachmentPage(List<AttachmentItem> items, Long nextCursor) {
     }
 
+    // 상단 검색 결과가 속한 방. name은 화면에 보일 이름(그룹명·1:1 상대 이름·나와의 채팅은 내 이름),
+    // hidden은 내가 목록에서 숨긴 방인지(누르면 숨김 해제 후 열기).
+    public record SearchRoom(Long id, String type, String name, boolean hidden) {
+    }
+
+    // 상단 검색 [메시지] 한 줄.
+    public record MessageSearchItem(Long messageId, SearchRoom room, Long senderMembershipId, String senderName,
+            String content, Instant createdAt) {
+    }
+
+    public record MessageSearchPage(List<MessageSearchItem> items, Long nextCursor) {
+    }
+
+    // 상단 검색 [파일] 한 줄.
+    public record FileSearchItem(Attachment attachment, Long messageId, SearchRoom room, String senderName,
+            Instant createdAt) {
+    }
+
+    public record FileSearchPage(List<FileSearchItem> items, Long nextCursor) {
+    }
+
     // 말풍선 아래 묶음 표시용 이모지별 집계. reactedByMe는 요청한 사용자 기준.
     public record Reaction(String emoji, long count, boolean reactedByMe) {
     }

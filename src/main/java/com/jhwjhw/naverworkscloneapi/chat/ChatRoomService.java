@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,6 +55,9 @@ public class ChatRoomService {
     static final Duration EDIT_WINDOW = Duration.ofHours(24);
     // 사진·파일 모아보기 한 페이지 크기
     static final int ATTACHMENT_PAGE_SIZE = 30;
+    // 상단 검색 한 페이지 크기와 검색어 최대 길이
+    static final int SEARCH_PAGE_SIZE = 30;
+    static final int SEARCH_KEYWORD_MAX = 100;
 
     private final ChatRoomRepository roomRepository;
     private final ChatRoomMemberRepository memberRepository;
@@ -535,6 +539,91 @@ public class ChatRoomService {
                         item.getChatMessage().getSenderMembership().getUserAccount().getDisplayName(),
                         item.getCreatedAt()))
                 .toList(), nextCursor);
+    }
+
+    // 상단 검색 [메시지]: 참여 중인 모든 방(숨긴 방 포함)에서 키워드가 들어간 메시지를 최신순으로 30개씩.
+    @Transactional(readOnly = true)
+    public ChatRoomResponse.MessageSearchPage searchMessages(Long requesterId, String keyword, Long cursor) {
+        Membership requester = activeMembership(requesterId);
+        String pattern = searchPattern(keyword);
+        // 한 개 더 읽어 다음 페이지가 있는지 판단.
+        List<ChatMessage> rows = messageRepository.searchByContent(requesterId, ChatMessageType.TEXT, pattern,
+                cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, SEARCH_PAGE_SIZE + 1));
+        List<ChatMessage> page = rows.stream().limit(SEARCH_PAGE_SIZE).toList();
+        Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
+                page.stream().map(ChatMessage::getChatRoom).toList());
+        return new ChatRoomResponse.MessageSearchPage(page.stream()
+                .map(message -> new ChatRoomResponse.MessageSearchItem(message.getId(),
+                        roomMap.get(message.getChatRoom().getId()), message.getSenderMembership().getId(),
+                        message.getSenderMembership().getUserAccount().getDisplayName(), message.getContent(),
+                        message.getCreatedAt()))
+                .toList(), rows.size() > SEARCH_PAGE_SIZE ? page.getLast().getId() : null);
+    }
+
+    // 상단 검색 [파일]: 참여 중인 모든 방(숨긴 방 포함)에서 파일 이름에 키워드가 들어간 첨부를 최신순으로 30개씩.
+    @Transactional(readOnly = true)
+    public ChatRoomResponse.FileSearchPage searchFiles(Long requesterId, String keyword, Long cursor) {
+        Membership requester = activeMembership(requesterId);
+        String pattern = searchPattern(keyword);
+        List<ChatMessageAttachment> rows = attachmentRepository.searchByName(requesterId, pattern,
+                cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, SEARCH_PAGE_SIZE + 1));
+        List<ChatMessageAttachment> page = rows.stream().limit(SEARCH_PAGE_SIZE).toList();
+        Map<Long, ChatRoomResponse.SearchRoom> roomMap = searchRooms(requester,
+                page.stream().map(ChatMessageAttachment::getChatRoom).toList());
+        return new ChatRoomResponse.FileSearchPage(page.stream()
+                .map(item -> new ChatRoomResponse.FileSearchItem(attachment(item), item.getChatMessage().getId(),
+                        roomMap.get(item.getChatRoom().getId()),
+                        item.getChatMessage().getSenderMembership().getUserAccount().getDisplayName(),
+                        item.getCreatedAt()))
+                .toList(), rows.size() > SEARCH_PAGE_SIZE ? page.getLast().getId() : null);
+    }
+
+    // 키워드를 '%키워드%' LIKE 패턴으로. 대소문자 무시, 키워드 속 %·_·!는 글자 그대로 찾도록 !로 이스케이프.
+    private static String searchPattern(String keyword) {
+        String trimmed = keyword == null ? "" : keyword.trim();
+        if (trimmed.isEmpty()) {
+            throw new ChatException("CHAT_SEARCH_KEYWORD_REQUIRED", "검색어를 입력해 주세요.");
+        }
+        if (trimmed.length() > SEARCH_KEYWORD_MAX) {
+            throw new ChatException("CHAT_SEARCH_KEYWORD_TOO_LONG", "검색어는 " + SEARCH_KEYWORD_MAX + "자까지 입력할 수 있습니다.");
+        }
+        String escaped = trimmed.toLowerCase(Locale.ROOT).replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        return "%" + escaped + "%";
+    }
+
+    // 검색 결과에 붙일 방 정보. 숨긴 방은 화면 목록에 없으므로 이름까지 서버에서 만들어 줌. 쿼리 한 번.
+    private Map<Long, ChatRoomResponse.SearchRoom> searchRooms(Membership requester, List<ChatRoom> rooms) {
+        Map<Long, ChatRoom> roomById = new LinkedHashMap<>();
+        rooms.forEach(room -> roomById.putIfAbsent(room.getId(), room));
+        if (roomById.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<ChatRoomMember>> membersByRoom = memberRepository
+                .findActiveByChatRoomIdIn(List.copyOf(roomById.keySet())).stream()
+                .collect(Collectors.groupingBy(member -> member.getChatRoom().getId()));
+        Map<Long, ChatRoomResponse.SearchRoom> result = new LinkedHashMap<>();
+        roomById.forEach((roomId, room) -> {
+            List<ChatRoomMember> members = membersByRoom.getOrDefault(roomId, List.of());
+            boolean hidden = members.stream()
+                    .anyMatch(member -> member.getMembership().getId().equals(requester.getId())
+                            && member.getHiddenAt() != null);
+            String name = switch (room.getRoomType()) {
+                case GROUP -> room.getName() == null || room.getName().isBlank() ? "이름 없는 그룹" : room.getName();
+                case SELF -> requester.getUserAccount().getDisplayName();
+                case DIRECT -> members.stream()
+                        .filter(member -> !member.getMembership().getId().equals(requester.getId()))
+                        .map(member -> member.getMembership().getUserAccount().getDisplayName())
+                        .findFirst().orElse("대화 상대 없음");
+            };
+            result.put(roomId, new ChatRoomResponse.SearchRoom(roomId, room.getRoomType().name(), name, hidden));
+        });
+        return result;
+    }
+
+    // 숨긴 방을 목록에 다시 보이게 함(검색 결과에서 숨긴 방을 열 때).
+    @Transactional
+    public void unhide(Long requesterId, Long roomId) {
+        active(roomId, requesterId).unhide();
     }
 
     // 내려받기용 첨부와 실제 파일.

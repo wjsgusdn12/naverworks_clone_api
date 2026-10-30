@@ -29,4 +29,22 @@ public interface ChatMessageAttachmentRepository extends JpaRepository<ChatMessa
             """)
     List<ChatMessageAttachment> findGallery(@Param("roomId") Long roomId, @Param("kind") ChatAttachmentKind kind,
             @Param("cursor") Long cursor, Pageable pageable);
+
+    // 상단 검색 [파일]: 내가 참여 중인 방(숨긴 방 포함)에서 파일 이름에 키워드가 들어간 첨부를 최신순으로.
+    // pattern은 '%키워드%' 형태이며 키워드 속 %·_는 !로 이스케이프돼 글자 그대로 찾음.
+    @Query("""
+            select a from ChatMessageAttachment a
+            join fetch a.chatMessage m
+            join fetch m.senderMembership s
+            join fetch s.userAccount
+            join fetch a.chatRoom r
+            where r.id in (select member.chatRoom.id from ChatRoomMember member
+                           where member.membership.id = :membershipId and member.leftAt is null)
+              and r.endedAt is null and m.deletedAt is null
+              and lower(a.originalName) like :pattern escape '!'
+              and a.id < :cursor
+            order by a.id desc
+            """)
+    List<ChatMessageAttachment> searchByName(@Param("membershipId") Long membershipId,
+            @Param("pattern") String pattern, @Param("cursor") Long cursor, Pageable pageable);
 }

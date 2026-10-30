@@ -89,6 +89,11 @@ public class ChatRoomMember {
         this.hiddenAt = Instant.now();
     }
 
+    // 숨긴 방을 목록에 다시 보이게 함.
+    public void unhide() {
+        this.hiddenAt = null;
+    }
+
     public void togglePin() {
         this.pinnedAt = pinnedAt == null ? Instant.now() : null;
     }

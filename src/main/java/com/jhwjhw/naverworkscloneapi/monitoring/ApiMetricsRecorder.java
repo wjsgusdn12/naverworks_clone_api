@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 // 요청 기록을 이 서버의 작은 상자에 모았다가 한꺼번에 DB로 보냄. 요청마다 DB에 다녀오면 응답이 느려지기 때문.
 // 둘 다 DB에 남으므로 서버·Redis를 재시작해도 집계가 사라지지 않음.
-// - pending: 5분 칸 → 5초마다 DB(ApiMetricBucketRepository, 이번 시간·오늘 그래프)로
+// - pending: 5분 칸, minutePending: 1분 칸 → 5초마다 DB(ApiMetricBucketRepository, 오늘·이번 시간 그래프)로
 // - hourlyPending: 1시간 칸 → 1분마다 DB(ApiMetricHourlyRepository, 이번 주·이번 달 그래프)로
 // 서버가 꺼질 때(재시작 포함)는 상자에 남은 것을 마지막으로 모두 보냄.
 @Component
@@ -20,15 +20,22 @@ import org.springframework.stereotype.Component;
 public class ApiMetricsRecorder {
     // 한 칸의 길이(초). 5분 단위로 모아 24시간이면 288칸.
     public static final long BUCKET_SECONDS = 300;
+    public static final long MINUTE_SECONDS = 60;
     public static final long HOUR_SECONDS = 3600;
 
     private final ApiMetricBucketRepository bucketRepository;
     private final ApiMetricHourlyRepository hourlyRepository;
     private Map<Long, MetricsBucket> pending = new HashMap<>();
+    private Map<Long, MetricsBucket> minutePending = new HashMap<>();
     private Map<Instant, MetricsBucket> hourlyPending = new HashMap<>();
 
     public static long bucketOf(Instant at) {
         return at.getEpochSecond() / BUCKET_SECONDS;
+    }
+
+    // 1분 칸 번호(1970년부터 1분 단위로 센 번호)
+    public static long minuteOf(Instant at) {
+        return at.getEpochSecond() / MINUTE_SECONDS;
     }
 
     // 그 시각이 속한 1시간의 시작 시각(예: 13:42 → 13:00)
@@ -38,27 +45,38 @@ public class ApiMetricsRecorder {
 
     public synchronized void record(String endpoint, int status, long durationMs, Instant at) {
         pending.computeIfAbsent(bucketOf(at), key -> new MetricsBucket()).record(endpoint, status, durationMs);
+        minutePending.computeIfAbsent(minuteOf(at), key -> new MetricsBucket()).record(endpoint, status, durationMs);
         hourlyPending.computeIfAbsent(hourOf(at), key -> new MetricsBucket()).record(endpoint, status, durationMs);
     }
 
-    // 모아 둔 5분 칸을 DB에 더함. 대시보드를 열 때도 먼저 불러 최신 기록이 빠지지 않게 함.
+    // 모아 둔 5분·1분 칸을 DB에 더함. 대시보드를 열 때도 먼저 불러 최신 기록이 빠지지 않게 함.
     @Scheduled(fixedDelay = 5000)
     public void flush() {
-        Map<Long, MetricsBucket> batch;
+        Map<Long, MetricsBucket> fiveMinutes;
+        Map<Long, MetricsBucket> minutes;
         synchronized (this) {
-            if (pending.isEmpty()) return;
-            batch = pending;
+            fiveMinutes = pending;
+            minutes = minutePending;
             pending = new HashMap<>();
+            minutePending = new HashMap<>();
         }
-        // 칸별로 따로 저장해, 실패한 칸만 되돌림(이미 저장된 칸을 두 번 더하지 않게).
+        save(ApiMetricBucketRepository.Ring.FIVE_MINUTES, fiveMinutes);
+        save(ApiMetricBucketRepository.Ring.ONE_MINUTE, minutes);
+    }
+
+    // 칸별로 따로 저장해, 실패한 칸만 되돌림(이미 저장된 칸을 두 번 더하지 않게).
+    private void save(ApiMetricBucketRepository.Ring ring, Map<Long, MetricsBucket> batch) {
         batch.forEach((bucket, data) -> {
             try {
-                bucketRepository.addBucket(bucket, data);
+                bucketRepository.addBucket(ring, bucket, data);
             } catch (RuntimeException exception) {
                 // DB가 잠깐 끊겨도 기록을 잃지 않도록 상자에 되돌려 다음 번에 다시 보냄.
-                log.warn("5분 집계를 DB에 저장하지 못해 다음에 다시 보냅니다. reason={}", exception.getMessage());
+                log.warn("짧은 단위 집계를 DB에 저장하지 못해 다음에 다시 보냅니다. ring={}, reason={}", ring,
+                        exception.getMessage());
                 synchronized (this) {
-                    pending.computeIfAbsent(bucket, key -> new MetricsBucket()).add(data);
+                    Map<Long, MetricsBucket> target = ring == ApiMetricBucketRepository.Ring.FIVE_MINUTES ? pending
+                            : minutePending;
+                    target.computeIfAbsent(bucket, key -> new MetricsBucket()).add(data);
                 }
             }
         });

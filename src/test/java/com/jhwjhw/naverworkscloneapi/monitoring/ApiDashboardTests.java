@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 // API 대시보드: 관리자 전용 권한, 요청 집계, 서버 두 대 기록의 합산, p95 계산 검증.
 class ApiDashboardTests {
+    private static final ApiMetricBucketRepository.Ring FIVE = ApiMetricBucketRepository.Ring.FIVE_MINUTES;
     @Autowired private MockMvc mvc;
     @Autowired private JwtEncoder encoder;
     @Autowired private ApiDashboardService dashboardService;
@@ -97,7 +98,7 @@ class ApiDashboardTests {
         java.time.ZoneId seoul = java.time.ZoneId.of(dashboard.zone());
         java.time.ZonedDateTime hourFirst = dashboard.hourTrend().getFirst().startAt().atZone(seoul);
         assertThat(hourFirst.getMinute()).isZero();
-        assertThat(dashboard.hourTrend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(55);
+        assertThat(dashboard.hourTrend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(59);
         java.time.ZonedDateTime dayFirst = dashboard.dayTrend().getFirst().startAt().atZone(seoul);
         assertThat(dayFirst.getHour()).isZero();
         java.time.ZonedDateTime dayLast = dashboard.dayTrend().getLast().startAt().atZone(seoul);
@@ -119,13 +120,13 @@ class ApiDashboardTests {
         assertThat(dashboard.monthTrend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
         assertThat(dashboard.monthTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.thisMonth().requests());
-        assertThat(dashboard.hourTrend()).hasSize(12);
+        assertThat(dashboard.hourTrend()).hasSize(ApiDashboardService.HOUR_MINUTES);
         // 이번 시간 추이의 점들을 더하면 이번 시간 합계.
         assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.thisHour().requests());
         // 기간별 순위: 이번 시간·오늘은 방금 요청이 들어 있고, 작은 추이선 칸 수는 기간에 맞음.
         assertThat(dashboard.hourRanking().top()).anyMatch(stat -> stat.endpoint().equals("GET /api/v1/chatRoom"));
-        assertThat(dashboard.hourRanking().bins()).hasSize(12);
+        assertThat(dashboard.hourRanking().bins()).hasSize(ApiDashboardService.HOUR_MINUTES);
         assertThat(dashboard.dayRanking().bins()).hasSize(ApiDashboardService.DAY_BUCKETS);
         assertThat(dashboard.dayRanking().top().getFirst().trendRequests()).hasSize(ApiDashboardService.DAY_BUCKETS);
         assertThat(dashboard.weekRanking().bins()).hasSize(7);
@@ -161,7 +162,7 @@ class ApiDashboardTests {
         server2.flushOnShutdown();
 
         long bucket = ApiMetricsRecorder.bucketOf(at);
-        MetricsBucket total = bucketRepository.read(bucket, bucket).get(bucket);
+        MetricsBucket total = bucketRepository.read(FIVE, bucket, bucket).get(bucket);
         assertThat(total.getCount()).isEqualTo(5);
         assertThat(total.getServerErrors()).isEqualTo(1);
         assertThat(total.p95Ms()).isEqualTo(200);
@@ -169,33 +170,37 @@ class ApiDashboardTests {
         assertThat(total.getEndpoints().get("GET /api/v1/chatRoom").getDurationSumMs()).isEqualTo(3 * 40 + 60);
         // 보낸 뒤에는 각 서버의 상자가 비어 같은 기록이 두 번 더해지지 않음.
         server1.flush();
-        assertThat(bucketRepository.read(bucket, bucket).get(bucket).getCount()).isEqualTo(5);
+        assertThat(bucketRepository.read(FIVE, bucket, bucket).get(bucket).getCount()).isEqualTo(5);
+        // 같은 기록이 1분 칸에도 들어가 이번 시간 1분 그래프에 쓰임.
+        long minute = ApiMetricsRecorder.minuteOf(at);
+        assertThat(bucketRepository.read(ApiMetricBucketRepository.Ring.ONE_MINUTE, minute, minute).get(minute)
+                .getCount()).isEqualTo(5);
     }
 
     // 5분 칸 자리는 300개를 돌려 씀: 25시간 뒤 같은 자리에 오면 옛 칸을 지우지 않고 새 값으로 덮어씀.
     @Test
     void bucketSlotIsReusedAfter25Hours() {
         long old = ApiMetricsRecorder.bucketOf(Instant.parse("2099-02-01T00:00:00Z"));
-        long reused = old + ApiMetricBucketRepository.SLOTS;
+        long reused = old + FIVE.slots();
         MetricsBucket oldData = new MetricsBucket();
         oldData.record("GET /old", 200, 40);
         oldData.record("GET /old", 200, 40);
-        bucketRepository.addBucket(old, oldData);
+        bucketRepository.addBucket(FIVE, old, oldData);
         MetricsBucket newData = new MetricsBucket();
         newData.record("GET /new", 500, 3000);
-        bucketRepository.addBucket(reused, newData);
+        bucketRepository.addBucket(FIVE, reused, newData);
 
         // 새 칸은 옛 값이 섞이지 않고(더하기가 아니라 덮어쓰기) 새 기록만.
-        MetricsBucket saved = bucketRepository.read(reused, reused).get(reused);
+        MetricsBucket saved = bucketRepository.read(FIVE, reused, reused).get(reused);
         assertThat(saved.getCount()).isEqualTo(1);
         assertThat(saved.getServerErrors()).isEqualTo(1);
         assertThat(saved.getEndpoints()).containsOnlyKeys("GET /new");
         // 옛 칸의 합계 행은 새 칸으로 바뀌어 옛 칸 합계는 0(그 뒤 안 불린 API 행은 남지만 25시간 지난 범위라
         // 대시보드가 읽지 않고, 행 수도 300자리 × API 수를 넘지 않음).
-        assertThat(bucketRepository.read(old, old).getOrDefault(old, new MetricsBucket()).getCount()).isZero();
+        assertThat(bucketRepository.read(FIVE, old, old).getOrDefault(old, new MetricsBucket()).getCount()).isZero();
         // 늦게 도착한 옛 칸 기록이 새 칸을 덮어쓰지 않음.
-        bucketRepository.addBucket(old, oldData);
-        assertThat(bucketRepository.read(reused, reused).get(reused).getCount()).isEqualTo(1);
+        bucketRepository.addBucket(FIVE, old, oldData);
+        assertThat(bucketRepository.read(FIVE, reused, reused).get(reused).getCount()).isEqualTo(1);
     }
 
     // p95: 100건 중 95번째로 빠른 요청이 들어간 구간의 위쪽 경계.

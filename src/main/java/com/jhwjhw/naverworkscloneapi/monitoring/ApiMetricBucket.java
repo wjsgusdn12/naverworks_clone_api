@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 
 // api_metric_bucket 테이블 모양(5분 칸 한 행). 읽고 쓰기는 "더하기·덮어쓰기" SQL이 필요해
-// ApiMetricBucketRepository가 JdbcTemplate으로 처리하고, 이 클래스는 테이블 구조 확인(validate)용.
+// ApiMetricBucketRepository(Ring.FIVE_MINUTES)가 JdbcTemplate으로 처리하고, 이 클래스는 테이블 구조 확인(validate)용.
 @Entity
 @Table(name = "api_metric_bucket",
         uniqueConstraints = @UniqueConstraint(name = "uk_api_metric_bucket", columnNames = { "slot", "endpoint" }),

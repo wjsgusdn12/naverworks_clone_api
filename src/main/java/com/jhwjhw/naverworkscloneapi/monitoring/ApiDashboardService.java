@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
 
 // DB의 5분 칸과 1시간 요약을 읽어 대시보드 숫자로 정리(둘 다 DB라 서버·Redis를 재시작해도 남음).
 // 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
-// - 이번 시간: 14:00~14:59 (5분 점 12개)
+// - 이번 시간: 14:00~14:59 (1분 점 60개)
 // - 오늘: 00:00~23:59 (5분 점 288개)
 // - 이번 주: 일요일 00시~토요일 23시 (1시간 점 168개)
 // - 이번 달: 1일~말일 (1시간 점 672~744개)
@@ -37,6 +37,7 @@ public class ApiDashboardService {
     private static final long BUCKETS_PER_HOUR = 3600 / ApiMetricsRecorder.BUCKET_SECONDS;
     static final int DAY_BUCKETS = 24 * (int) BUCKETS_PER_HOUR;
     static final int WEEK_HOURS = 24 * 7;
+    static final int HOUR_MINUTES = 60;
 
     private final ApiMetricsRecorder recorder;
     private final ApiMetricsStore store;
@@ -100,21 +101,25 @@ public class ApiDashboardService {
 
         // 오늘 0시부터 지금까지의 5분 칸(DB가 25시간치를 돌려 쓰며 보관해 하루를 모두 덮음)
         long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
-        long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
-        Map<Long, MetricsBucket> buckets = bucketRepository.read(dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
+        Map<Long, MetricsBucket> buckets = bucketRepository.read(ApiMetricBucketRepository.Ring.FIVE_MINUTES, dayFirstBucket,
+                ApiMetricsRecorder.bucketOf(now));
 
-        // 이번 시간: 5분 칸 12개 그대로. API별 5분 [호출 수, 걸린 시간 합]도 모음(순위 옆 작은 추이선용).
+        // 이번 시간: DB의 1분 칸 60개(정각~59분). API별 1분 [호출 수, 걸린 시간 합]도 모음(순위 옆 작은 추이선용).
+        long hourFirstMinute = ApiMetricsRecorder.minuteOf(hourStart);
+        Map<Long, MetricsBucket> minutes = bucketRepository.read(ApiMetricBucketRepository.Ring.ONE_MINUTE,
+                hourFirstMinute, ApiMetricsRecorder.minuteOf(now));
         MetricsBucket thisHour = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> hourTrend = new ArrayList<>();
         List<Instant> hourBins = new ArrayList<>();
         Map<String, long[][]> hourSeries = new HashMap<>();
-        for (int index = 0; index < BUCKETS_PER_HOUR; index++) {
-            long bucket = hourFirstBucket + index;
-            MetricsBucket data = buckets.getOrDefault(bucket, new MetricsBucket());
+        for (int index = 0; index < HOUR_MINUTES; index++) {
+            long minute = hourFirstMinute + index;
+            MetricsBucket data = minutes.getOrDefault(minute, new MetricsBucket());
+            Instant start = Instant.ofEpochSecond(minute * ApiMetricsRecorder.MINUTE_SECONDS);
             thisHour.add(data);
-            hourTrend.add(point(bucket, data));
-            hourBins.add(Instant.ofEpochSecond(bucket * ApiMetricsRecorder.BUCKET_SECONDS));
-            collect(hourSeries, data, index, (int) BUCKETS_PER_HOUR);
+            hourTrend.add(point(start, data));
+            hourBins.add(start);
+            collect(hourSeries, data, index, HOUR_MINUTES);
         }
 
         // 오늘: 5분 칸 288개 그대로. API별 5분 값도 함께 모음.

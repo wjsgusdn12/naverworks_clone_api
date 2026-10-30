@@ -2,27 +2,35 @@ package com.jhwjhw.naverworkscloneapi.monitoring;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-// 집계판의 5분 칸들을 읽어 대시보드 숫자(1시간·24시간 합계, 추이, 순위, 서버 목록)로 정리.
+// 집계판의 5분 칸과 DB의 1시간 요약을 읽어 대시보드 숫자로 정리.
+// 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
+// - 이번 시간: 14:00~14:59 (5분 점 12개)
+// - 오늘: 00:00~23:59 (1시간 점 24개)
+// - 이번 주: 일요일 00시~토요일 23시 (1시간 점 168개)
+// 아직 오지 않은 시간의 점도 자리는 만들어 두고(값 0), 화면이 "기록 전"으로 비워 그림.
 @Service
-@RequiredArgsConstructor
 public class ApiDashboardService {
     static final int TOP_COUNT = 5;
     // 몇 번 안 불린 API가 "가장 느림"에 오르지 않도록 최소 호출 수.
     static final int SLOW_MIN_REQUESTS = 5;
     private static final long BUCKETS_PER_HOUR = 3600 / ApiMetricsRecorder.BUCKET_SECONDS;
-    private static final long BUCKETS_PER_DAY = BUCKETS_PER_HOUR * 24;
-    // 일주일 그래프의 1시간 점 개수
+    static final int DAY_HOURS = 24;
     static final int WEEK_HOURS = 24 * 7;
 
     private final ApiMetricsRecorder recorder;
@@ -30,6 +38,19 @@ public class ApiDashboardService {
     private final ServerStatusReporter reporter;
     private final DataSource dataSource;
     private final ApiMetricHourlyRepository hourlyRepository;
+    // 하루·한 주를 자르는 기준 시간대
+    private final ZoneId zone;
+
+    public ApiDashboardService(ApiMetricsRecorder recorder, ApiMetricsStore store, ServerStatusReporter reporter,
+            DataSource dataSource, ApiMetricHourlyRepository hourlyRepository,
+            @Value("${app.monitoring.zone:Asia/Seoul}") String zone) {
+        this.recorder = recorder;
+        this.store = store;
+        this.reporter = reporter;
+        this.dataSource = dataSource;
+        this.hourlyRepository = hourlyRepository;
+        this.zone = ZoneId.of(zone);
+    }
 
     public ApiDashboardResponse dashboard() {
         Instant now = Instant.now();
@@ -38,58 +59,65 @@ public class ApiDashboardService {
         recorder.flushHourly();
         reporter.report();
 
-        // 일주일: DB의 1시간 요약 168칸(지금 시간 포함)
-        Instant thisHour = ApiMetricsRecorder.hourOf(now);
-        Instant weekFrom = thisHour.minus(Duration.ofHours(WEEK_HOURS - 1));
-        Map<Instant, MetricsBucket> weekHours = hourlyRepository.readTotals(weekFrom);
-        MetricsBucket lastWeek = new MetricsBucket();
+        ZonedDateTime local = now.atZone(zone);
+        Instant hourStart = local.truncatedTo(ChronoUnit.HOURS).toInstant();
+        Instant dayStart = local.toLocalDate().atStartOfDay(zone).toInstant();
+        Instant weekStart = local.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+                .atStartOfDay(zone).toInstant();
+
+        // 이번 주: DB의 1시간 요약 168칸
+        Map<Instant, MetricsBucket> weekHours = hourlyRepository.readTotals(weekStart);
+        MetricsBucket thisWeek = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> weekTrend = new ArrayList<>();
         for (int hour = 0; hour < WEEK_HOURS; hour++) {
-            Instant start = weekFrom.plus(Duration.ofHours(hour));
+            Instant start = weekStart.plus(Duration.ofHours(hour));
             MetricsBucket data = weekHours.getOrDefault(start, new MetricsBucket());
-            lastWeek.add(data);
+            thisWeek.add(data);
             weekTrend.add(point(start, data));
         }
 
-        long current = ApiMetricsRecorder.bucketOf(now);
-        long from = current - BUCKETS_PER_DAY + 1;
-        Map<Long, MetricsBucket> buckets = store.read(from, current);
+        // 오늘 0시부터 지금까지의 5분 칸(집계판은 25시간치를 갖고 있어 하루를 모두 덮음)
+        long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
+        long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
+        Map<Long, MetricsBucket> buckets = store.read(dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
 
-        MetricsBucket lastHour = new MetricsBucket();
-        MetricsBucket lastDay = new MetricsBucket();
-        List<ApiDashboardResponse.TrendPoint> trend = new ArrayList<>();
-        List<ApiDashboardResponse.TrendPoint> recentTrend = new ArrayList<>();
-        // 엔드포인트별 1시간 단위 [호출 수, 걸린 시간 합] — 목록 옆 작은 추이선용.
+        // 이번 시간: 5분 칸 12개 그대로
+        MetricsBucket thisHour = new MetricsBucket();
+        List<ApiDashboardResponse.TrendPoint> hourTrend = new ArrayList<>();
+        for (long bucket = hourFirstBucket; bucket < hourFirstBucket + BUCKETS_PER_HOUR; bucket++) {
+            MetricsBucket data = buckets.getOrDefault(bucket, new MetricsBucket());
+            thisHour.add(data);
+            hourTrend.add(point(bucket, data));
+        }
+
+        // 오늘: 5분 칸 12개씩 묶어 1시간 점 24개. API별 1시간 [호출 수, 걸린 시간 합]도 함께 모음(작은 추이선용).
+        MetricsBucket today = new MetricsBucket();
+        List<ApiDashboardResponse.TrendPoint> dayTrend = new ArrayList<>();
         Map<String, long[][]> hourlyByEndpoint = new HashMap<>();
-        // 24시간을 1시간(5분 칸 12개)씩 묶어 추이를 만듦. 마지막 1시간은 5분 칸 그대로도 담음.
-        for (int hour = 0; hour < 24; hour++) {
+        for (int hour = 0; hour < DAY_HOURS; hour++) {
             MetricsBucket hourly = new MetricsBucket();
-            long start = from + hour * BUCKETS_PER_HOUR;
+            long start = dayFirstBucket + hour * BUCKETS_PER_HOUR;
             for (long bucket = start; bucket < start + BUCKETS_PER_HOUR; bucket++) {
                 MetricsBucket data = buckets.get(bucket);
-                if (bucket > current - BUCKETS_PER_HOUR) {
-                    recentTrend.add(point(bucket, data == null ? new MetricsBucket() : data));
-                }
-                if (data == null) continue;
-                hourly.add(data);
-                if (bucket > current - BUCKETS_PER_HOUR) lastHour.add(data);
+                if (data != null) hourly.add(data);
             }
-            lastDay.add(hourly);
-            trend.add(point(start, hourly));
+            today.add(hourly);
+            dayTrend.add(point(start, hourly));
             int hourIndex = hour;
             hourly.getEndpoints().forEach((endpoint, stats) -> {
-                long[][] series = hourlyByEndpoint.computeIfAbsent(endpoint, key -> new long[2][24]);
+                long[][] series = hourlyByEndpoint.computeIfAbsent(endpoint, key -> new long[2][DAY_HOURS]);
                 series[0][hourIndex] = stats.getCount();
                 series[1][hourIndex] = stats.getDurationSumMs();
             });
         }
 
-        List<ApiDashboardResponse.EndpointStat> endpoints = lastDay.getEndpoints().entrySet().stream()
+        // API 순위는 오늘 기준
+        List<ApiDashboardResponse.EndpointStat> endpoints = today.getEndpoints().entrySet().stream()
                 .map(entry -> {
-                    long[][] series = hourlyByEndpoint.getOrDefault(entry.getKey(), new long[2][24]);
+                    long[][] series = hourlyByEndpoint.getOrDefault(entry.getKey(), new long[2][DAY_HOURS]);
                     List<Long> hourlyRequests = new ArrayList<>();
                     List<Long> hourlyAvgMs = new ArrayList<>();
-                    for (int hour = 0; hour < 24; hour++) {
+                    for (int hour = 0; hour < DAY_HOURS; hour++) {
                         hourlyRequests.add(series[0][hour]);
                         hourlyAvgMs.add(average(series[1][hour], series[0][hour]));
                     }
@@ -114,11 +142,11 @@ public class ApiDashboardService {
                         status.realtimeConnections(), status.instanceId().equals(reporter.instanceId())))
                 .toList();
 
-        return new ApiDashboardResponse(now, store.mode(), databaseStatus(), servers, summary(lastHour),
-                summary(lastDay), summary(lastWeek), trend, recentTrend, weekTrend, top, slow);
+        return new ApiDashboardResponse(now, zone.getId(), store.mode(), databaseStatus(), servers, summary(thisHour),
+                summary(today), summary(thisWeek), hourTrend, dayTrend, weekTrend, top, slow);
     }
 
-    // startBucket부터 시작하는 구간 하나를 추이 한 점으로.
+    // startBucket부터 시작하는 5분 구간 하나를 추이 한 점으로.
     private static ApiDashboardResponse.TrendPoint point(long startBucket, MetricsBucket data) {
         return point(Instant.ofEpochSecond(startBucket * ApiMetricsRecorder.BUCKET_SECONDS), data);
     }

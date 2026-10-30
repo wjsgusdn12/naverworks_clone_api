@@ -75,7 +75,7 @@ class ApiDashboardTests {
     // 실제 요청이 엔드포인트 패턴별로 세지고, 보안에서 막힌 요청(401)도 함께 세짐. 대시보드 자신의 조회는 빠짐.
     @Test
     void realRequestsAreCountedByEndpointPattern() throws Exception {
-        long before = dashboardService.dashboard().lastHour().requests();
+        long before = dashboardService.dashboard().thisHour().requests();
         mvc.perform(get("/api/v1/chatRoom").header("Authorization", bearer(user))).andExpect(status().isOk());
         mvc.perform(get("/api/v1/chatRoom").header("Authorization", bearer(user))).andExpect(status().isOk());
         mvc.perform(get("/api/v1/chatRoom")).andExpect(status().isUnauthorized());
@@ -84,22 +84,36 @@ class ApiDashboardTests {
         ApiDashboardResponse dashboard = dashboardService.dashboard();
         assertThat(dashboard.mode()).isEqualTo("LOCAL");
         assertThat(dashboard.database()).isEqualTo("UP");
-        assertThat(dashboard.lastHour().requests()).isEqualTo(before + 3);
-        assertThat(dashboard.lastHour().clientErrors()).isGreaterThanOrEqualTo(1);
+        assertThat(dashboard.thisHour().requests()).isEqualTo(before + 3);
+        assertThat(dashboard.thisHour().clientErrors()).isGreaterThanOrEqualTo(1);
         assertThat(dashboard.topEndpoints()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");
             assertThat(stat.requests()).isGreaterThanOrEqualTo(2);
         });
         assertThat(dashboard.topEndpoints()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
-        assertThat(dashboard.trend()).hasSize(24);
-        assertThat(dashboard.recentTrend()).hasSize(12);
+        assertThat(dashboard.dayTrend()).hasSize(24);
+        // 달력 기준: 이번 시간은 정각부터, 오늘은 0시부터, 이번 주는 일요일 0시부터(한국 시간).
+        java.time.ZoneId seoul = java.time.ZoneId.of(dashboard.zone());
+        java.time.ZonedDateTime hourFirst = dashboard.hourTrend().getFirst().startAt().atZone(seoul);
+        assertThat(hourFirst.getMinute()).isZero();
+        assertThat(dashboard.hourTrend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(55);
+        java.time.ZonedDateTime dayFirst = dashboard.dayTrend().getFirst().startAt().atZone(seoul);
+        assertThat(dayFirst.getHour()).isZero();
+        assertThat(dashboard.dayTrend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
+        java.time.ZonedDateTime weekFirst = dashboard.weekTrend().getFirst().startAt().atZone(seoul);
+        assertThat(weekFirst.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SUNDAY);
+        assertThat(weekFirst.getHour()).isZero();
+        java.time.ZonedDateTime weekLast = dashboard.weekTrend().getLast().startAt().atZone(seoul);
+        assertThat(weekLast.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
+        assertThat(weekLast.getHour()).isEqualTo(23);
+        assertThat(dashboard.hourTrend()).hasSize(12);
         // 추이의 마지막 점(지금 시간대)에 방금 요청이 들어가 있고, 엔드포인트별 작은 추이선도 24칸.
-        assertThat(dashboard.recentTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
-                .isEqualTo(dashboard.lastHour().requests());
+        assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.thisHour().requests());
         assertThat(dashboard.topEndpoints().getFirst().hourlyRequests()).hasSize(24);
         // 일주일 그래프: DB 1시간 요약 168칸, 방금 요청도 1시간 요약에 들어감.
         assertThat(dashboard.weekTrend()).hasSize(ApiDashboardService.WEEK_HOURS);
-        assertThat(dashboard.lastWeek().requests()).isGreaterThanOrEqualTo(dashboard.lastHour().requests());
+        assertThat(dashboard.thisWeek().requests()).isGreaterThanOrEqualTo(dashboard.thisHour().requests());
         assertThat(dashboard.servers()).anyMatch(ApiDashboardResponse.Server::current);
     }
 

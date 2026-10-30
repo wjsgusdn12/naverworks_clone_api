@@ -35,6 +35,8 @@ app:
   monitoring:
     # 대시보드의 서버 목록에 보일 이름. 비우면 컴퓨터 이름 + 임의 4글자.
     instance-id: ${APP_INSTANCE_ID:}
+    # 대시보드의 "이번 시간·오늘·이번 주"를 자르는 기준 시간대.
+    zone: ${APP_TIMEZONE:Asia/Seoul}
   storage:
     # 첨부 파일을 저장할 서버 디스크 폴더. 배포 때는 Docker 볼륨 경로로 덮어씀.
     root: ${FILE_STORAGE_ROOT:./uploads}

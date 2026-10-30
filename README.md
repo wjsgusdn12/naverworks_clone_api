@@ -15,7 +15,7 @@
 </div>
 
 > 네이버웍스의 협업 기능을 참고해 설계한 개인 프로젝트입니다. 특정 서비스의 내부 구현이나 디자인을 복제하지 않습니다.
-> 이 문서는 프로젝트의 **전체 설계**를 그림으로 보여 줍니다. 구현 현황은 [docs/PROGRESS.md](docs/PROGRESS.md)에 따로 기록합니다.
+> 이 문서는 프로젝트의 **전체 설계**를 그림으로 보여 줍니다.
 
 ---
 
@@ -607,5 +607,5 @@ DB 비밀번호와 JWT 시크릿은 환경변수나 로컬 설정 파일에만 �
 
 ## 문서
 
-- [전체 설계·요구사항](docs/PROJECT_CONTEXT.md) · [구현 현황](docs/PROGRESS.md) · [기능 체크리스트](docs/FEATURE_CHECKLIST.md) · [실험 명세](docs/ENGINEERING_EXPERIMENTS.md)
+- [프론트엔드 README](https://github.com/wjsgusdn12/naverworks_clone_front#readme)
 - 이 README의 다이어그램은 `scripts/build-diagrams.mjs`가 `docs/diagrams/`에 SVG로 뽑아 두며, 프론트 앱의 "프로젝트 소개" 모달이 같은 파일을 보여 줍니다.

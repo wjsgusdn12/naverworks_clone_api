@@ -38,3 +38,9 @@ Thumbs.db
 # Test and profiling outputs
 coverage/
 *.hprof
+
+# Internal working notes (kept locally, not published)
+docs/PROJECT_CONTEXT.md
+docs/PROGRESS.md
+docs/FEATURE_CHECKLIST.md
+docs/ENGINEERING_EXPERIMENTS.md

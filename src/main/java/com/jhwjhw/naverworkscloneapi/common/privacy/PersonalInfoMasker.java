@@ -5,13 +5,17 @@ public final class PersonalInfoMasker {
 
     // 이메일 아이디 부분에서 앞쪽에 보여 줄 최대 글자 수.
     private static final int EMAIL_VISIBLE_LENGTH = 4;
+    // 가리는 최소 글자 수. 아이디가 길어도 최소 이만큼은 가림.
+    private static final int EMAIL_HIDDEN_LENGTH = 4;
+    // 가입할 수 있는 이메일 아이디 부분의 최소 길이.
+    public static final int EMAIL_LOCAL_MIN_LENGTH = 4;
 
     private PersonalInfoMasker() {
         // 정적 유틸 클래스는 인스턴스 생성 금지.
     }
 
-    // abcdefgh1@example.com → abcd*****@example.com. 앞 4글자만 보이고 나머지는 글자 수만큼 *.
-    // 아이디가 4글자 이하면 첫 글자만 보여 줌(전부 드러나지 않도록).
+    // 아이디 부분에서 (길이 - 4)글자만 앞에서 보여 주고 나머지는 글자 수만큼 *. 보이는 글자는 최소 1, 최대 4.
+    // user → u***, user1 → u****, user11 → us****, abcdefgh1 → abcd*****
     public static String maskEmail(String email) {
         if (email == null || email.isBlank()) {
             return email;
@@ -21,7 +25,7 @@ public final class PersonalInfoMasker {
             return "*".repeat(email.length());
         }
         String local = email.substring(0, at);
-        int visible = local.length() > EMAIL_VISIBLE_LENGTH ? EMAIL_VISIBLE_LENGTH : 1;
+        int visible = Math.max(1, Math.min(EMAIL_VISIBLE_LENGTH, local.length() - EMAIL_HIDDEN_LENGTH));
         return local.substring(0, visible) + "*".repeat(local.length() - visible) + email.substring(at);
     }
 

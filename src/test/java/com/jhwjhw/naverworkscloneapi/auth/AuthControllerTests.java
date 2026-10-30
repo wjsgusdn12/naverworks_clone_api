@@ -138,7 +138,7 @@ class AuthControllerTests {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("AUTH_MEMBER_FOUND"))
-                .andExpect(jsonPath("$.data.email").value("admi*@example.com"))
+                .andExpect(jsonPath("$.data.email").value("a****@example.com"))
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
     }
 
@@ -354,6 +354,17 @@ class AuthControllerTests {
                                 + "\"joinType\":\"DEMO\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("AUTH_LOGIN_ID_TAKEN"));
+    }
+
+    // 이메일 @ 앞부분이 4자 미만이면 가입 거부.
+    @Test
+    void signupRejectsTooShortEmailLocalPart() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"shortmail\",\"password\":\"safe-pass-123\",\"displayName\":\"짧은메일\","
+                                + "\"email\":\"abc@example.com\",\"joinType\":\"DEMO\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_EMAIL_TOO_SHORT"));
     }
 
     // 계정 찾기: 이름·이메일·전화번호가 모두 맞으면 비밀번호를 바꿀 수 있고, 하나라도 틀리면 거부.

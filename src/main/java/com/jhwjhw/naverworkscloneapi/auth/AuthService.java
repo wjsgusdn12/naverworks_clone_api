@@ -174,6 +174,11 @@ public class AuthService {
         if (userAccountRepository.existsByLoginId(loginId)) {
             throw new AuthException("AUTH_LOGIN_ID_TAKEN", "이미 사용 중인 아이디입니다.");
         }
+        // 화면에서 앞 일부만 보이고 나머지를 가리므로, @ 앞이 너무 짧은 이메일은 받지 않음.
+        if (email != null && email.indexOf('@') < PersonalInfoMasker.EMAIL_LOCAL_MIN_LENGTH) {
+            throw new AuthException("AUTH_EMAIL_TOO_SHORT",
+                    "이메일은 @ 앞부분이 " + PersonalInfoMasker.EMAIL_LOCAL_MIN_LENGTH + "자 이상이어야 합니다.");
+        }
         if (email != null && userAccountRepository.existsByEmail(email)) {
             throw new AuthException("AUTH_EMAIL_TAKEN", "이미 등록된 이메일입니다.");
         }

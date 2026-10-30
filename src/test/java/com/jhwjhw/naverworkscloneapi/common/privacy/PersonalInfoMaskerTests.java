@@ -9,9 +9,12 @@ class PersonalInfoMaskerTests {
 
     @Test
     void masksEmailKeepingFirstFourLetters() {
+        assertThat(PersonalInfoMasker.maskEmail("user@example.com")).isEqualTo("u***@example.com");
+        assertThat(PersonalInfoMasker.maskEmail("user1@example.com")).isEqualTo("u****@example.com");
+        assertThat(PersonalInfoMasker.maskEmail("user11@example.com")).isEqualTo("us****@example.com");
+        assertThat(PersonalInfoMasker.maskEmail("user1111@example.com")).isEqualTo("user****@example.com");
+        // 보이는 글자는 최대 4개, 나머지는 글자 수만큼 가림.
         assertThat(PersonalInfoMasker.maskEmail("abcdefgh1@example.com")).isEqualTo("abcd*****@example.com");
-        // 4글자 이하 아이디는 첫 글자만.
-        assertThat(PersonalInfoMasker.maskEmail("abcd@example.com")).isEqualTo("a***@example.com");
         assertThat(PersonalInfoMasker.maskEmail(null)).isNull();
     }
 

@@ -17,12 +17,18 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.function.Function;
+import java.util.function.IntFunction;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-// DB의 5분 칸과 1시간 요약을 읽어 대시보드 숫자로 정리(둘 다 DB라 서버·Redis를 재시작해도 남음).
+// DB의 1분·5분 칸과 1시간 요약을 읽어 대시보드 숫자로 정리(모두 DB라 서버·Redis를 재시작해도 남음).
+// - 숫자 카드와 순위 합계: 시·일·주·월 모두 빠짐없는 1시간 요약 기준(서로 항상 맞아떨어짐).
+// - 그래프: 이번 시간 1분, 오늘 5분 칸. 잘게 쪼갠 기록이 없는 구간(예: 기능 추가 전)은
+//   큰 단위 기록(5분·1시간 합계)으로 채워 묶음 첫 칸에 점 하나로 표시.
 // 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
 // - 이번 시간: 14:00~14:59 (1분 점 60개)
 // - 오늘: 00:00~23:59 (5분 점 288개)
@@ -38,6 +44,8 @@ public class ApiDashboardService {
     static final int DAY_BUCKETS = 24 * (int) BUCKETS_PER_HOUR;
     static final int WEEK_HOURS = 24 * 7;
     static final int HOUR_MINUTES = 60;
+    static final int DAY_HOURS = 24;
+    private static final int MINUTES_PER_BUCKET = (int) (ApiMetricsRecorder.BUCKET_SECONDS / 60);
 
     private final ApiMetricsRecorder recorder;
     private final ApiMetricsStore store;
@@ -84,7 +92,7 @@ public class ApiDashboardService {
             Instant start = weekStart.plus(Duration.ofHours(hour));
             MetricsBucket data = weekHours.getOrDefault(start, new MetricsBucket());
             thisWeek.add(data);
-            weekTrend.add(point(start, data));
+            weekTrend.add(point(start, data, 60));
         }
 
         // 이번 달: 1시간 요약 그대로(1일 0시~말일 23시)
@@ -95,46 +103,41 @@ public class ApiDashboardService {
         for (Instant hour = monthStart; hour.isBefore(monthEnd); hour = hour.plus(Duration.ofHours(1))) {
             MetricsBucket data = weekHours.getOrDefault(hour, new MetricsBucket());
             thisMonth.add(data);
-            monthTrend.add(point(hour, data));
+            monthTrend.add(point(hour, data, 60));
             monthBins.add(hour);
         }
 
-        // 오늘 0시부터 지금까지의 5분 칸(DB가 25시간치를 돌려 쓰며 보관해 하루를 모두 덮음)
-        long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
-        Map<Long, MetricsBucket> buckets = bucketRepository.read(ApiMetricBucketRepository.Ring.FIVE_MINUTES, dayFirstBucket,
-                ApiMetricsRecorder.bucketOf(now));
+        // 숫자 카드: 이번 시간·오늘도 1시간 요약에서(1분·5분 칸은 기능 추가 전 기록이 없을 수 있음).
+        Instant dayEnd = dayStart.plus(Duration.ofHours(DAY_HOURS));
+        MetricsBucket thisHour = new MetricsBucket();
+        thisHour.add(weekHours.getOrDefault(hourStart, new MetricsBucket()));
+        MetricsBucket today = new MetricsBucket();
+        for (int hour = 0; hour < DAY_HOURS; hour++) {
+            today.add(weekHours.getOrDefault(dayStart.plus(Duration.ofHours(hour)), new MetricsBucket()));
+        }
 
-        // 이번 시간: DB의 1분 칸 60개(정각~59분). API별 1분 [호출 수, 걸린 시간 합]도 모음(순위 옆 작은 추이선용).
+        // 오늘 0시부터 지금까지의 5분 칸, 이번 시간 정각부터 지금까지의 1분 칸(DB가 돌려 쓰며 보관)
+        long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
+        Map<Long, MetricsBucket> buckets = bucketRepository.read(ApiMetricBucketRepository.Ring.FIVE_MINUTES,
+                dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
         long hourFirstMinute = ApiMetricsRecorder.minuteOf(hourStart);
         Map<Long, MetricsBucket> minutes = bucketRepository.read(ApiMetricBucketRepository.Ring.ONE_MINUTE,
                 hourFirstMinute, ApiMetricsRecorder.minuteOf(now));
-        MetricsBucket thisHour = new MetricsBucket();
-        List<ApiDashboardResponse.TrendPoint> hourTrend = new ArrayList<>();
-        List<Instant> hourBins = new ArrayList<>();
-        Map<String, long[][]> hourSeries = new HashMap<>();
-        for (int index = 0; index < HOUR_MINUTES; index++) {
-            long minute = hourFirstMinute + index;
-            MetricsBucket data = minutes.getOrDefault(minute, new MetricsBucket());
-            Instant start = Instant.ofEpochSecond(minute * ApiMetricsRecorder.MINUTE_SECONDS);
-            thisHour.add(data);
-            hourTrend.add(point(start, data));
-            hourBins.add(start);
-            collect(hourSeries, data, index, HOUR_MINUTES);
-        }
+        long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
 
-        // 오늘: 5분 칸 288개 그대로. API별 5분 값도 함께 모음.
-        MetricsBucket today = new MetricsBucket();
-        List<ApiDashboardResponse.TrendPoint> dayTrend = new ArrayList<>();
-        List<Instant> dayBins = new ArrayList<>();
-        Map<String, long[][]> daySeries = new HashMap<>();
-        for (int index = 0; index < DAY_BUCKETS; index++) {
-            long bucket = dayFirstBucket + index;
-            MetricsBucket data = buckets.getOrDefault(bucket, new MetricsBucket());
-            today.add(data);
-            dayTrend.add(point(bucket, data));
-            dayBins.add(Instant.ofEpochSecond(bucket * ApiMetricsRecorder.BUCKET_SECONDS));
-            collect(daySeries, data, index, DAY_BUCKETS);
-        }
+        // 이번 시간 그래프: 1분 칸 60개. 1분 기록이 없는 5분 구간은 5분 칸으로 채움.
+        FineSeries hourFine = fineSeries(HOUR_MINUTES, MINUTES_PER_BUCKET, 1, MINUTES_PER_BUCKET,
+                index -> Instant.ofEpochSecond((hourFirstMinute + index) * ApiMetricsRecorder.MINUTE_SECONDS),
+                index -> minutes.get(hourFirstMinute + index), group -> buckets.get(hourFirstBucket + group));
+        // 오늘 그래프: 5분 칸 288개. 5분 기록이 없는 시간은 1시간 요약으로 채움.
+        FineSeries dayFine = fineSeries(DAY_BUCKETS, (int) BUCKETS_PER_HOUR, MINUTES_PER_BUCKET, 60,
+                index -> Instant.ofEpochSecond((dayFirstBucket + index) * ApiMetricsRecorder.BUCKET_SECONDS),
+                index -> buckets.get(dayFirstBucket + index),
+                group -> weekHours.get(dayStart.plus(Duration.ofHours(group))));
+        List<ApiDashboardResponse.TrendPoint> hourTrend = hourFine.points();
+        List<ApiDashboardResponse.TrendPoint> dayTrend = dayFine.points();
+        List<Instant> hourBins = hourFine.bins();
+        List<Instant> dayBins = dayFine.bins();
 
         // 이번 주·이번 달 순위: DB의 API별 1시간 요약을 기간 합계로 읽음.
         // 작은 추이선은 이번 주는 하루 단위, 이번 달은 1시간 단위.
@@ -142,8 +145,12 @@ public class ApiDashboardService {
         Instant weekEnd = weekFirstDay.plusDays(7).atStartOfDay(zone).toInstant();
         List<Instant> weekBins = dayStarts(weekFirstDay, 7);
 
-        ApiDashboardResponse.Ranking hourRanking = ranking(thisHour.getEndpoints(), hourBins, names -> hourSeries);
-        ApiDashboardResponse.Ranking dayRanking = ranking(today.getEndpoints(), dayBins, names -> daySeries);
+        // 이번 시간·오늘 순위도 합계는 1시간 요약 기준. 작은 추이선은 그래프와 같은 칸(빈 구간은 큰 단위로 채움).
+        ApiDashboardResponse.Ranking hourRanking = ranking(
+                hourlyRepository.readEndpointTotals(hourStart, hourStart.plus(Duration.ofHours(1))), hourBins,
+                names -> hourFine.series());
+        ApiDashboardResponse.Ranking dayRanking = ranking(hourlyRepository.readEndpointTotals(dayStart, dayEnd),
+                dayBins, names -> daySeriesWithHourly(dayFine, dayStart, dayEnd, names));
         ApiDashboardResponse.Ranking weekRanking = ranking(hourlyRepository.readEndpointTotals(weekStart, weekEnd),
                 weekBins, names -> dailySeries(weekStart, weekEnd, weekFirstDay, weekBins.size(), names));
         ApiDashboardResponse.Ranking monthRanking = ranking(hourlyRepository.readEndpointTotals(monthStart, monthEnd),
@@ -158,6 +165,65 @@ public class ApiDashboardService {
         return new ApiDashboardResponse(now, zone.getId(), store.mode(), databaseStatus(), servers, summary(thisHour),
                 summary(today), summary(thisWeek), summary(thisMonth), hourTrend, dayTrend, weekTrend, monthTrend,
                 hourRanking, dayRanking, weekRanking, monthRanking);
+    }
+
+    // 잘게 쪼갠 그래프 한 벌: 점, 칸 시작 시각, API별 [호출 수, 걸린 시간 합](순위 옆 작은 추이선용),
+    // 큰 단위로 채운 묶음 번호(fallbackGroups).
+    private record FineSeries(List<ApiDashboardResponse.TrendPoint> points, List<Instant> bins,
+            Map<String, long[][]> series, Set<Integer> fallbackGroups) {
+    }
+
+    // count개의 작은 칸으로 그래프를 만듦. perGroup개씩 묶은 구간에 작은 칸 기록이 하나도 없고
+    // 큰 칸(group) 기록이 있으면, 큰 칸 값을 묶음 첫 칸에 넣고(spanMinutes = groupMinutes) 나머지는 0으로 표시.
+    private static FineSeries fineSeries(int count, int perGroup, int fineMinutes, int groupMinutes,
+            IntFunction<Instant> startOf, IntFunction<MetricsBucket> fineAt, IntFunction<MetricsBucket> groupAt) {
+        List<ApiDashboardResponse.TrendPoint> points = new ArrayList<>();
+        List<Instant> bins = new ArrayList<>();
+        Map<String, long[][]> series = new HashMap<>();
+        Set<Integer> fallbackGroups = new HashSet<>();
+        for (int group = 0; group * perGroup < count; group++) {
+            int first = group * perGroup;
+            int last = Math.min(first + perGroup, count);
+            boolean fineEmpty = IntStream.range(first, last)
+                    .allMatch(index -> fineAt.apply(index) == null || fineAt.apply(index).isEmpty());
+            MetricsBucket coarse = groupAt.apply(group);
+            boolean useCoarse = fineEmpty && coarse != null && !coarse.isEmpty();
+            if (useCoarse) fallbackGroups.add(group);
+            for (int index = first; index < last; index++) {
+                Instant start = startOf.apply(index);
+                bins.add(start);
+                if (useCoarse) {
+                    MetricsBucket data = index == first ? coarse : new MetricsBucket();
+                    points.add(point(start, data, index == first ? groupMinutes : 0));
+                    if (index == first) collect(series, coarse, index, count);
+                    continue;
+                }
+                MetricsBucket data = fineAt.apply(index) == null ? new MetricsBucket() : fineAt.apply(index);
+                points.add(point(start, data, fineMinutes));
+                collect(series, data, index, count);
+            }
+        }
+        return new FineSeries(points, bins, series, fallbackGroups);
+    }
+
+    // 오늘 작은 추이선: 1시간 요약으로 채운 시간은 1시간 합계 행에 API별 값이 없으므로 DB의 API별 1시간 기록을 더함.
+    private Map<String, long[][]> daySeriesWithHourly(FineSeries fine, Instant dayStart, Instant dayEnd,
+            Set<String> endpoints) {
+        Map<String, long[][]> series = new HashMap<>();
+        fine.series().forEach((endpoint, values) -> series.put(endpoint,
+                new long[][] { values[0].clone(), values[1].clone() }));
+        if (fine.fallbackGroups().isEmpty()) return series;
+        int size = fine.bins().size();
+        for (ApiMetricHourlyRepository.EndpointHour row : hourlyRepository.readEndpointHours(dayStart, dayEnd,
+                endpoints)) {
+            int hour = (int) Duration.between(dayStart, row.hourStart()).toHours();
+            if (!fine.fallbackGroups().contains(hour)) continue;
+            int index = hour * (int) BUCKETS_PER_HOUR;
+            long[][] values = series.computeIfAbsent(row.endpoint(), key -> new long[2][size]);
+            values[0][index] += row.requests();
+            values[1][index] += row.durationSumMs();
+        }
+        return series;
     }
 
     // 한 칸(index)의 API별 [호출 수, 걸린 시간 합]을 series에 더함.
@@ -238,14 +304,10 @@ public class ApiDashboardService {
     }
 
     // startBucket부터 시작하는 5분 구간 하나를 추이 한 점으로.
-    private static ApiDashboardResponse.TrendPoint point(long startBucket, MetricsBucket data) {
-        return point(Instant.ofEpochSecond(startBucket * ApiMetricsRecorder.BUCKET_SECONDS), data);
-    }
-
-    private static ApiDashboardResponse.TrendPoint point(Instant start, MetricsBucket data) {
+    private static ApiDashboardResponse.TrendPoint point(Instant start, MetricsBucket data, int spanMinutes) {
         return new ApiDashboardResponse.TrendPoint(start, data.getCount(),
                 data.getClientErrors() + data.getServerErrors(), average(data.getDurationSumMs(), data.getCount()),
-                data.p95Ms());
+                data.p95Ms(), spanMinutes);
     }
 
     private static ApiDashboardResponse.Summary summary(MetricsBucket bucket) {

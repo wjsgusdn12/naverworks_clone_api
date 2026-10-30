@@ -203,6 +203,38 @@ class ApiDashboardTests {
         assertThat(bucketRepository.read(FIVE, reused, reused).get(reused).getCount()).isEqualTo(1);
     }
 
+    // 5분 칸이 생기기 전(또는 비어 있는) 시간도 1시간 요약(DB)으로 채워 오늘 숫자·그래프·순위에서 빠지지 않음.
+    @Test
+    void todayFillsHoursWithoutFineRecordsFromHourlySummary() {
+        java.time.ZoneId seoul = java.time.ZoneId.of("Asia/Seoul");
+        java.time.ZonedDateTime local = Instant.now().atZone(seoul);
+        // 지금 시각과 겹치지 않는 오늘의 한 시간(실제 요청은 지금 시간에만 쌓임)
+        int hourIndex = (local.getHour() + 12) % 24;
+        Instant hour = local.toLocalDate().atStartOfDay(seoul).toInstant().plusSeconds(hourIndex * 3600L);
+        MetricsBucket past = new MetricsBucket();
+        for (int i = 0; i < 7; i++) past.record("GET /api/v1/pastOnly", 200, 40);
+        hourlyRepository.addHour(hour, past);
+
+        ApiDashboardResponse dashboard = dashboardService.dashboard();
+        // 그 시간의 첫 5분 칸에 1시간 합계 점 하나(spanMinutes 60), 나머지 11칸은 묶음에 포함(0).
+        int first = hourIndex * 12;
+        ApiDashboardResponse.TrendPoint point = dashboard.dayTrend().get(first);
+        assertThat(point.startAt()).isEqualTo(hour);
+        assertThat(point.requests()).isEqualTo(7);
+        assertThat(point.spanMinutes()).isEqualTo(60);
+        assertThat(dashboard.dayTrend().subList(first + 1, first + 12))
+                .allSatisfy(item -> assertThat(item.spanMinutes()).isZero());
+        // 숫자 카드·그래프 합계가 1시간 요약과 맞고, 순위에도 그 시간의 API가 들어감.
+        assertThat(dashboard.today().requests()).isGreaterThanOrEqualTo(7);
+        assertThat(dashboard.dayTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.today().requests());
+        assertThat(dashboard.dayRanking().top()).anySatisfy(stat -> {
+            assertThat(stat.endpoint()).isEqualTo("GET /api/v1/pastOnly");
+            assertThat(stat.requests()).isEqualTo(7);
+            assertThat(stat.trendRequests().get(first)).isEqualTo(7);
+        });
+    }
+
     // p95: 100건 중 95번째로 빠른 요청이 들어간 구간의 위쪽 경계.
     @Test
     void p95IsCalculatedFromLatencyHistogram() {

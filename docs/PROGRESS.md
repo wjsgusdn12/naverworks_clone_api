@@ -104,6 +104,16 @@ Next.js 로그인 UI
 - 검증: API 컴파일 성공. Front `npm run lint`, `npm run build` 성공. API 전체 테스트는 기존 V14 PostgreSQL 전용 `UPDATE ... FROM` 문이 H2 테스트 DB에서 실패해 실행되지 못함.
 - Git Commit/Push: 수행하지 않음.
 
+### 2026-10-30 / 메시지 전달·공지 마무리
+- 사용자 요청: 메신저 확장 4번(메시지 전달·공지) 작업을 마무리로 종결.
+- 사용자 결정: 공지 등록·해제 권한은 방장 전용으로 바꾸지 않고 방 참여자 누구나 유지(네이버웍스 방식).
+- 현 코드에서 확인한 사실: 전달(여러 방 동시, 중복 방 1회, 전달됨 표시, 참여하지 않은 방·삭제·시스템 메시지 거부), 내용 복사 방식 스냅숏, 방당 다중 공지·메시지별 해제·실시간 NOTICE_UPDATED, 원본 삭제 시 공지 해제는 이미 구현돼 있었음.
+- 이번 수정: 공지로 걸린 메시지를 수정하면 공지 변경 이벤트를 다시 발행해 다른 참여자 화면의 공지 카드도 바로 갱신. 프론트는 기존 NOTICE_UPDATED 처리로 반영되어 변경 없음.
+- 실제 수정 파일: API `chat/ChatRoomService.java`, `ChatForwardNoticeTests.java`, `docs/FEATURE_CHECKLIST.md`, `docs/PROGRESS.md`.
+- 실행한 테스트(격리 복사본): ChatForwardNoticeTests 5/5, ChatMessageMutationTests 15/15, ChatReactionTests 4/4, ChatReplyTests 8/8, NotificationTests 4/4 통과.
+- 미해결: 없음. 다음 순서는 5번 파일·이미지 첨부.
+- Git Commit/Push: 커밋만 수행, Push는 사용자.
+
 ### YYYY-MM-DD / Phase N
 - 사용자 요청:
 - 사용자 승인 여부:

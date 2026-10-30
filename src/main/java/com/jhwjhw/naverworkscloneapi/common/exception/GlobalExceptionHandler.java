@@ -15,6 +15,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 // Controller 안에서 발생한 예외를 API 공통 형식으로 변환.
 @RestControllerAdvice
@@ -31,9 +32,20 @@ public class GlobalExceptionHandler {
                                         "CHAT_REACTION_EXPIRED" ->
                                 HttpStatus.FORBIDDEN;
                         case "CHAT_MESSAGE_CONFLICT", "CHAT_MESSAGE_ALREADY_DELETED" -> HttpStatus.CONFLICT;
+                        case "CHAT_ATTACHMENT_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+                        case "CHAT_ATTACHMENT_TOO_LARGE" -> HttpStatus.CONTENT_TOO_LARGE;
+                        case "CHAT_ATTACHMENT_SAVE_FAILED" -> HttpStatus.INTERNAL_SERVER_ERROR;
                         default -> HttpStatus.BAD_REQUEST;
                 };
                 return ResponseEntity.status(status).body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+        }
+
+        // 업로드 상한(application.yml multipart 설정)을 넘긴 파일은 컨트롤러에 닿기 전에 막힘.
+        @ExceptionHandler(MaxUploadSizeExceededException.class)
+        public ResponseEntity<ApiResponse<Void>> handleUploadTooLarge(HttpServletRequest request) {
+                log.warn("Upload too large. method={}, path={}", request.getMethod(), request.getRequestURI());
+                return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                                .body(ApiResponse.failure("CHAT_ATTACHMENT_TOO_LARGE", "파일은 20MB까지 보낼 수 있습니다."));
         }
 
         @ExceptionHandler(OptimisticLockingFailureException.class)

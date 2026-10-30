@@ -1,9 +1,20 @@
 package com.jhwjhw.naverworkscloneapi.chat;
 
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatAttachmentKind;
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageAttachment;
 import com.jhwjhw.naverworkscloneapi.common.response.ApiResponse;
 import jakarta.validation.Valid;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -129,6 +140,44 @@ public class ChatRoomController {
   public ApiResponse<ChatRoomResponse.Message> message(@AuthenticationPrincipal Jwt jwt, @RequestParam Long chatRoomId,
       @Valid @RequestBody ChatRoomRequest.MessageCreateRequest r) {
     return ApiResponse.success("CHAT_MESSAGE_CREATED", "메시지를 전송했습니다.", service.sendMessage(id(jwt), chatRoomId, r));
+  }
+
+  // 사진·파일 전송. 파일 하나가 메시지 하나가 됨.
+  @PostMapping(value = "/message/attachment/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ApiResponse<ChatRoomResponse.Message> sendAttachment(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam MultipartFile file,
+      @RequestParam(required = false) Long replyToMessageId) {
+    return ApiResponse.success("CHAT_ATTACHMENT_CREATED", "파일을 전송했습니다.",
+        service.sendAttachment(id(jwt), chatRoomId, file, replyToMessageId));
+  }
+
+  // 방 상세의 사진·파일 모아보기. kind는 IMAGE 또는 FILE.
+  @GetMapping("/message/attachment/list")
+  public ApiResponse<ChatRoomResponse.AttachmentPage> attachments(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long chatRoomId, @RequestParam String kind, @RequestParam(required = false) Long cursor) {
+    return ApiResponse.success("CHAT_ATTACHMENT_FOUND", "첨부 목록을 조회했습니다.",
+        service.attachments(id(jwt), chatRoomId, kind, cursor));
+  }
+
+  // 첨부 내려받기. inline=true면 사진을 화면 표시용으로 보내고, 그 외에는 항상 저장(다운로드)용으로 보냄.
+  @GetMapping("/message/attachment/download")
+  public ResponseEntity<Resource> downloadAttachment(@AuthenticationPrincipal Jwt jwt,
+      @RequestParam Long attachmentId, @RequestParam(defaultValue = "false") boolean inline) {
+    ChatRoomService.AttachmentFile file = service.attachmentFile(id(jwt), attachmentId);
+    ChatMessageAttachment attachment = file.attachment();
+    boolean showInline = inline && attachment.getKind() == ChatAttachmentKind.IMAGE;
+    // 일반 파일은 형식을 octet-stream으로 고정해 브라우저가 HTML 등으로 열어 실행하지 못하게 함.
+    MediaType type = showInline ? MediaType.parseMediaType(attachment.getContentType())
+        : MediaType.APPLICATION_OCTET_STREAM;
+    ContentDisposition disposition = (showInline ? ContentDisposition.inline() : ContentDisposition.attachment())
+        .filename(attachment.getOriginalName(), StandardCharsets.UTF_8).build();
+    return ResponseEntity.ok()
+        .contentType(type)
+        .contentLength(attachment.getSize())
+        .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+        // 같은 파일은 내용이 바뀌지 않으므로 본인 브라우저에만 캐시.
+        .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
+        .body(file.resource());
   }
 
   // 작성자 본인만 메시지 수정.

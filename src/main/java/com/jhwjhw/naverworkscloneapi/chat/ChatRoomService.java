@@ -1,6 +1,8 @@
 package com.jhwjhw.naverworkscloneapi.chat;
 
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatAttachmentKind;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessage;
+import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageAttachment;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageReaction;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatMessageType;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatNotificationMode;
@@ -8,6 +10,7 @@ import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoom;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomMember;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomNotice;
 import com.jhwjhw.naverworkscloneapi.chat.domain.ChatRoomType;
+import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageAttachmentRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionRepository;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageMentionRow;
 import com.jhwjhw.naverworkscloneapi.chat.repository.ChatMessageReactionSummary;
@@ -37,8 +40,11 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.io.Resource;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -46,12 +52,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomService {
     // 보낸 뒤 이 시간이 지나면 메시지를 수정·삭제하거나 리액션을 남길 수 없음.
     static final Duration EDIT_WINDOW = Duration.ofHours(24);
+    // 사진·파일 모아보기 한 페이지 크기
+    static final int ATTACHMENT_PAGE_SIZE = 30;
 
     private final ChatRoomRepository roomRepository;
     private final ChatRoomMemberRepository memberRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatMessageReactionRepository reactionRepository;
     private final ChatRoomNoticeRepository noticeRepository;
+    private final ChatMessageAttachmentRepository attachmentRepository;
+    private final ChatAttachmentStore attachmentStore;
     private final MembershipRepository membershipRepository;
     private final MemberFavoriteRepository favoriteRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -294,14 +304,24 @@ public class ChatRoomService {
             ChatMessage copy = new ChatMessage(sender.getChatRoom(), sender.getMembership(), original.getContent(),
                     ChatMessageType.TEXT);
             copy.forwardedFrom(original);
-            return deliver(sender, copy);
+            // 사진·파일이면 같은 파일을 가리키는 첨부를 새 메시지에도 붙임.
+            ChatMessageAttachment attachment = attachmentRepository.findByChatMessageId(original.getId())
+                    .map(item -> item.copyFor(copy)).orElse(null);
+            return deliver(sender, copy, attachment);
         }).toList();
     }
 
     // 저장·읽음 처리·알림·실시간 발행까지 메시지 한 건을 보내는 공통 흐름.
     private ChatRoomResponse.Message deliver(ChatRoomMember sender, ChatMessage message) {
+        return deliver(sender, message, null);
+    }
+
+    // 첨부가 있으면 메시지를 먼저 저장해 ID를 받은 뒤 첨부를 연결해 저장.
+    private ChatRoomResponse.Message deliver(ChatRoomMember sender, ChatMessage message,
+            ChatMessageAttachment attachment) {
         ChatRoom room = sender.getChatRoom();
         messageRepository.save(message);
+        if (attachment != null) attachmentRepository.save(attachment);
         sender.markRead(message.getId());
         ChatRoomResponse.Message response = message(message, readSummaries(List.of(message)).get(message.getId()), List.of());
         notifyMessage(room, sender.getMembership(), message);
@@ -436,19 +456,87 @@ public class ChatRoomService {
         ChatRoom room = sender.getChatRoom();
         requireOpen(room);
         ChatMessage message = new ChatMessage(room, sender.getMembership(), request.content().trim(), ChatMessageType.TEXT);
-        if (request.replyToMessageId() != null) {
-            ChatMessage original = requireRoomMessage(roomId, request.replyToMessageId());
-            requireNotDeleted(original);
-            if (original.getMessageType() != ChatMessageType.TEXT) {
-                throw new ChatException("CHAT_REPLY_NOT_ALLOWED", "시스템 안내에는 답장할 수 없습니다.");
-            }
-            message.replyTo(original);
-        }
+        ChatMessage original = replyOriginal(roomId, request.replyToMessageId());
+        if (original != null) message.replyTo(original);
         message.mention(validMentionedMemberIds(roomId, requesterId, request.mentionedMembershipIds()));
         ChatRoomResponse.Message response = deliver(sender, message);
         log.debug("Chat message sent. roomId={}, messageId={}, senderId={}, replyToMessageId={}",
                 roomId, message.getId(), requesterId, message.getReplyToMessageId());
         return response;
+    }
+
+    // 답장할 원문을 찾아 검사. 답장이 아니면 null.
+    private ChatMessage replyOriginal(Long roomId, Long replyToMessageId) {
+        if (replyToMessageId == null) return null;
+        ChatMessage original = requireRoomMessage(roomId, replyToMessageId);
+        requireNotDeleted(original);
+        if (original.getMessageType() != ChatMessageType.TEXT) {
+            throw new ChatException("CHAT_REPLY_NOT_ALLOWED", "시스템 안내에는 답장할 수 없습니다.");
+        }
+        return original;
+    }
+
+    // 사진·파일 전송. 파일 하나가 메시지 하나가 됨. 본문에는 사진이면 "사진", 파일이면 파일 이름을 넣어
+    // 방 목록 미리보기·알림·답장 인용·공지가 별도 처리 없이 자연스럽게 보이게 함.
+    @Transactional
+    public ChatRoomResponse.Message sendAttachment(Long requesterId, Long roomId, MultipartFile file,
+            Long replyToMessageId) {
+        ChatRoomMember sender = active(roomId, requesterId);
+        ChatRoom room = sender.getChatRoom();
+        requireOpen(room);
+        // 권한·답장 검사를 먼저 끝내고 나서 디스크에 저장.
+        ChatMessage original = replyOriginal(roomId, replyToMessageId);
+        ChatAttachmentStore.StoredFile stored = attachmentStore.store(file);
+        String content = stored.kind() == ChatAttachmentKind.IMAGE ? "사진" : stored.name();
+        ChatMessage message = new ChatMessage(room, sender.getMembership(), content, ChatMessageType.TEXT);
+        if (original != null) message.replyTo(original);
+        ChatMessageAttachment attachment = new ChatMessageAttachment(message, stored.kind(), stored.name(),
+                stored.contentType(), stored.size(), stored.key(), stored.width(), stored.height());
+        ChatRoomResponse.Message response = deliver(sender, message, attachment);
+        log.info("Chat attachment sent. roomId={}, messageId={}, senderId={}, kind={}, size={}",
+                roomId, message.getId(), requesterId, stored.kind(), stored.size());
+        return response;
+    }
+
+    // 방 상세의 사진·파일 모아보기(최신순). 삭제된 메시지의 첨부는 빠짐.
+    @Transactional(readOnly = true)
+    public ChatRoomResponse.AttachmentPage attachments(Long requesterId, Long roomId, String kind, Long cursor) {
+        active(roomId, requesterId);
+        ChatAttachmentKind attachmentKind;
+        try {
+            attachmentKind = ChatAttachmentKind.valueOf(kind);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new ChatException("CHAT_ATTACHMENT_KIND_INVALID", "사진 또는 파일 중에서 골라 주세요.");
+        }
+        // 한 개 더 읽어 다음 페이지가 있는지 판단.
+        List<ChatMessageAttachment> rows = attachmentRepository.findGallery(roomId, attachmentKind,
+                cursor == null ? Long.MAX_VALUE : cursor, PageRequest.of(0, ATTACHMENT_PAGE_SIZE + 1));
+        List<ChatMessageAttachment> page = rows.stream().limit(ATTACHMENT_PAGE_SIZE).toList();
+        Long nextCursor = rows.size() > ATTACHMENT_PAGE_SIZE ? page.getLast().getId() : null;
+        return new ChatRoomResponse.AttachmentPage(page.stream()
+                .map(item -> new ChatRoomResponse.AttachmentItem(attachment(item), item.getChatMessage().getId(),
+                        item.getChatMessage().getSenderMembership().getId(),
+                        item.getChatMessage().getSenderMembership().getUserAccount().getDisplayName(),
+                        item.getCreatedAt()))
+                .toList(), nextCursor);
+    }
+
+    // 내려받기용 첨부와 실제 파일.
+    public record AttachmentFile(ChatMessageAttachment attachment, Resource resource) {
+    }
+
+    // 그 방의 활성 참여자만, 삭제되지 않은 메시지의 첨부만 내려받을 수 있음.
+    @Transactional(readOnly = true)
+    public AttachmentFile attachmentFile(Long requesterId, Long attachmentId) {
+        ChatMessageAttachment attachment = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new ChatException("CHAT_ATTACHMENT_NOT_FOUND", "파일을 찾을 수 없습니다."));
+        active(attachment.getChatRoom().getId(), requesterId);
+        Resource resource = attachment.getChatMessage().getDeletedAt() == null
+                ? attachmentStore.load(attachment.getStorageKey()) : null;
+        if (resource == null) {
+            throw new ChatException("CHAT_ATTACHMENT_NOT_FOUND", "파일을 찾을 수 없습니다.");
+        }
+        return new AttachmentFile(attachment, resource);
     }
 
     // 보낸 사람을 뺀 활성 참여자에게 방별 알림 설정(끔·멘션만·전체)을 지켜 서비스 알림을 남김.
@@ -478,6 +566,9 @@ public class ChatRoomService {
         requireNotDeleted(message);
         requireWithinWindow(message, "CHAT_MESSAGE_EDIT_EXPIRED", "24시간 이내에 보낸 메시지만 수정할 수 있습니다.");
         requireMessageVersion(message, request.expectedVersion());
+        if (attachmentRepository.existsByChatMessageId(messageId)) {
+            throw new ChatException("CHAT_ATTACHMENT_NOT_EDITABLE", "사진·파일 메시지는 수정할 수 없습니다.");
+        }
         String content = request.content().trim();
         if (content.isBlank() || content.length() > 2000) {
             throw new ChatException("CHAT_MESSAGE_CONTENT_INVALID", "메시지는 1~2,000자로 입력해 주세요.");
@@ -585,9 +676,12 @@ public class ChatRoomService {
         Map<Long, ChatMessageReadSummary> summaries = readSummaries(ordered);
         Map<Long, List<ChatRoomResponse.Reaction>> reactionMap = reactionSummaries(ordered, requesterId);
         Map<Long, List<Long>> mentionMap = mentions(ordered);
+        Map<Long, ChatMessageAttachment> attachmentMap = ordered.isEmpty() ? Map.of()
+                : attachmentRepository.findByChatMessageIdIn(ordered.stream().map(ChatMessage::getId).toList()).stream()
+                        .collect(Collectors.toMap(item -> item.getChatMessage().getId(), Function.identity()));
         List<ChatRoomResponse.Message> result = ordered.stream()
                 .map(item -> message(item, summaries.get(item.getId()), reactionMap.getOrDefault(item.getId(), List.of()),
-                        mentionMap.getOrDefault(item.getId(), List.of())))
+                        mentionMap.getOrDefault(item.getId(), List.of()), attachmentMap.get(item.getId())))
                 .toList();
         return new ChatRoomResponse.MessagePage(result, nextCursor, newerCursor);
     }
@@ -855,11 +949,13 @@ public class ChatRoomService {
     // 메시지 한 건만 다룰 때는 지연 로딩 한 번이 전부라 getter를 그대로 사용.
     private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary,
             List<ChatRoomResponse.Reaction> reactions) {
-        return message(message, readSummary, reactions, List.copyOf(message.getMentionedMembershipIds()));
+        return message(message, readSummary, reactions, List.copyOf(message.getMentionedMembershipIds()),
+                attachmentRepository.findByChatMessageId(message.getId()).orElse(null));
     }
 
     private ChatRoomResponse.Message message(ChatMessage message, ChatMessageReadSummary readSummary,
-            List<ChatRoomResponse.Reaction> reactions, List<Long> mentionedMembershipIds) {
+            List<ChatRoomResponse.Reaction> reactions, List<Long> mentionedMembershipIds,
+            ChatMessageAttachment attachment) {
         long recipientCount = readSummary == null ? 0 : readSummary.getRecipientCount();
         long readCount = readSummary == null ? 0 : readSummary.getReadCount();
         long unreadCount = Math.max(0, recipientCount - readCount);
@@ -875,7 +971,15 @@ public class ChatRoomService {
                 message.getMessageType().name(),
                 message.getCreatedAt(), unreadCount, readCount, mentionedMembershipIds,
                 reply, message.getEditedAt(), message.getDeletedAt(), message.getVersion(), reactions,
-                message.getForwardedFromMessageId() != null);
+                message.getForwardedFromMessageId() != null,
+                // 삭제된 메시지는 첨부도 감춤.
+                deleted || attachment == null ? null : attachment(attachment));
+    }
+
+    private ChatRoomResponse.Attachment attachment(ChatMessageAttachment attachment) {
+        return new ChatRoomResponse.Attachment(attachment.getId(), attachment.getKind().name(),
+                attachment.getOriginalName(), attachment.getContentType(), attachment.getSize(), attachment.getWidth(),
+                attachment.getHeight());
     }
 
     // 현재 방의 활성 구성원만 멘션할 수 있어 다른 회사/탈퇴 구성원 ID 주입을 차단.

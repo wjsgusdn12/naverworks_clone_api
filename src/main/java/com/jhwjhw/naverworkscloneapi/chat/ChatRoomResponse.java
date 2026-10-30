@@ -52,7 +52,22 @@ public record ChatRoomResponse() {
     public record Message(Long id, Long senderMembershipId, String senderName, String content, String type,
             Instant createdAt,
             long unreadCount, long readCount, List<Long> mentionedMembershipIds, Reply reply,
-            Instant editedAt, Instant deletedAt, long version, List<Reaction> reactions, boolean forwarded) {
+            Instant editedAt, Instant deletedAt, long version, List<Reaction> reactions, boolean forwarded,
+            Attachment attachment) {
+    }
+
+    // 사진·파일 메시지의 첨부 정보. 일반 텍스트나 삭제된 메시지면 null.
+    public record Attachment(Long id, String kind, String name, String contentType, long size, Integer width,
+            Integer height) {
+    }
+
+    // 방 상세의 사진·파일 모아보기 항목.
+    public record AttachmentItem(Attachment attachment, Long messageId, Long senderMembershipId, String senderName,
+            Instant createdAt) {
+    }
+
+    // 모아보기 페이지. nextCursor가 null이면 더 오래된 항목이 없음.
+    public record AttachmentPage(List<AttachmentItem> items, Long nextCursor) {
     }
 
     // 말풍선 아래 묶음 표시용 이모지별 집계. reactedByMe는 요청한 사용자 기준.

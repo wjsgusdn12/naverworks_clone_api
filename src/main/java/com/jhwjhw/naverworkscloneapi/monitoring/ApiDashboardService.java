@@ -25,9 +25,9 @@ import org.springframework.stereotype.Service;
 // 집계판의 5분 칸과 DB의 1시간 요약을 읽어 대시보드 숫자로 정리.
 // 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
 // - 이번 시간: 14:00~14:59 (5분 점 12개)
-// - 오늘: 00:00~23:59 (1시간 점 24개)
+// - 오늘: 00:00~23:59 (5분 점 288개)
 // - 이번 주: 일요일 00시~토요일 23시 (1시간 점 168개)
-// - 이번 달: 1일~말일 (1일 점 28~31개)
+// - 이번 달: 1일~말일 (1시간 점 672~744개)
 // 아직 오지 않은 시간의 점도 자리는 만들어 두고(값 0), 화면이 "기록 전"으로 비워 그림.
 @Service
 public class ApiDashboardService {
@@ -35,7 +35,7 @@ public class ApiDashboardService {
     // 몇 번 안 불린 API가 "가장 느림"에 오르지 않도록 최소 호출 수.
     static final int SLOW_MIN_REQUESTS = 5;
     private static final long BUCKETS_PER_HOUR = 3600 / ApiMetricsRecorder.BUCKET_SECONDS;
-    static final int DAY_HOURS = 24;
+    static final int DAY_BUCKETS = 24 * (int) BUCKETS_PER_HOUR;
     static final int WEEK_HOURS = 24 * 7;
 
     private final ApiMetricsRecorder recorder;
@@ -84,19 +84,16 @@ public class ApiDashboardService {
             weekTrend.add(point(start, data));
         }
 
-        // 이번 달: 1시간 요약을 하루씩 묶음(그 날의 0시~23시)
+        // 이번 달: 1시간 요약 그대로(1일 0시~말일 23시)
+        Instant monthEnd = monthFirstDay.plusMonths(1).atStartOfDay(zone).toInstant();
         MetricsBucket thisMonth = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> monthTrend = new ArrayList<>();
-        for (int day = 0; day < monthFirstDay.lengthOfMonth(); day++) {
-            ZonedDateTime dateStart = monthFirstDay.plusDays(day).atStartOfDay(zone);
-            Instant nextDay = dateStart.plusDays(1).toInstant();
-            MetricsBucket daily = new MetricsBucket();
-            for (Instant hour = dateStart.toInstant(); hour.isBefore(nextDay); hour = hour.plus(Duration.ofHours(1))) {
-                MetricsBucket data = weekHours.get(hour);
-                if (data != null) daily.add(data);
-            }
-            thisMonth.add(daily);
-            monthTrend.add(point(dateStart.toInstant(), daily));
+        List<Instant> monthBins = new ArrayList<>();
+        for (Instant hour = monthStart; hour.isBefore(monthEnd); hour = hour.plus(Duration.ofHours(1))) {
+            MetricsBucket data = weekHours.getOrDefault(hour, new MetricsBucket());
+            thisMonth.add(data);
+            monthTrend.add(point(hour, data));
+            monthBins.add(hour);
         }
 
         // 오늘 0시부터 지금까지의 5분 칸(집계판은 25시간치를 갖고 있어 하루를 모두 덮음)
@@ -118,37 +115,32 @@ public class ApiDashboardService {
             collect(hourSeries, data, index, (int) BUCKETS_PER_HOUR);
         }
 
-        // 오늘: 5분 칸 12개씩 묶어 1시간 점 24개. API별 1시간 값도 함께 모음.
+        // 오늘: 5분 칸 288개 그대로. API별 5분 값도 함께 모음.
         MetricsBucket today = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> dayTrend = new ArrayList<>();
         List<Instant> dayBins = new ArrayList<>();
         Map<String, long[][]> daySeries = new HashMap<>();
-        for (int hour = 0; hour < DAY_HOURS; hour++) {
-            MetricsBucket hourly = new MetricsBucket();
-            long start = dayFirstBucket + hour * BUCKETS_PER_HOUR;
-            for (long bucket = start; bucket < start + BUCKETS_PER_HOUR; bucket++) {
-                MetricsBucket data = buckets.get(bucket);
-                if (data != null) hourly.add(data);
-            }
-            today.add(hourly);
-            dayTrend.add(point(start, hourly));
-            dayBins.add(Instant.ofEpochSecond(start * ApiMetricsRecorder.BUCKET_SECONDS));
-            collect(daySeries, hourly, hour, DAY_HOURS);
+        for (int index = 0; index < DAY_BUCKETS; index++) {
+            long bucket = dayFirstBucket + index;
+            MetricsBucket data = buckets.getOrDefault(bucket, new MetricsBucket());
+            today.add(data);
+            dayTrend.add(point(bucket, data));
+            dayBins.add(Instant.ofEpochSecond(bucket * ApiMetricsRecorder.BUCKET_SECONDS));
+            collect(daySeries, data, index, DAY_BUCKETS);
         }
 
-        // 이번 주·이번 달 순위: DB의 API별 1시간 요약을 기간 합계로 읽고, 작은 추이선은 하루 단위로 묶음.
+        // 이번 주·이번 달 순위: DB의 API별 1시간 요약을 기간 합계로 읽음.
+        // 작은 추이선은 이번 주는 하루 단위, 이번 달은 1시간 단위.
         LocalDate weekFirstDay = weekStart.atZone(zone).toLocalDate();
         Instant weekEnd = weekFirstDay.plusDays(7).atStartOfDay(zone).toInstant();
-        Instant monthEnd = monthFirstDay.plusMonths(1).atStartOfDay(zone).toInstant();
         List<Instant> weekBins = dayStarts(weekFirstDay, 7);
-        List<Instant> monthBins = dayStarts(monthFirstDay, monthFirstDay.lengthOfMonth());
 
         ApiDashboardResponse.Ranking hourRanking = ranking(thisHour.getEndpoints(), hourBins, names -> hourSeries);
         ApiDashboardResponse.Ranking dayRanking = ranking(today.getEndpoints(), dayBins, names -> daySeries);
         ApiDashboardResponse.Ranking weekRanking = ranking(hourlyRepository.readEndpointTotals(weekStart, weekEnd),
                 weekBins, names -> dailySeries(weekStart, weekEnd, weekFirstDay, weekBins.size(), names));
         ApiDashboardResponse.Ranking monthRanking = ranking(hourlyRepository.readEndpointTotals(monthStart, monthEnd),
-                monthBins, names -> dailySeries(monthStart, monthEnd, monthFirstDay, monthBins.size(), names));
+                monthBins, names -> hourlySeries(monthStart, monthEnd, monthBins.size(), names));
 
         List<ApiDashboardResponse.Server> servers = store.servers(now).stream()
                 .map(status -> new ApiDashboardResponse.Server(status.instanceId(), status.startedAt(),
@@ -187,6 +179,19 @@ public class ApiDashboardService {
             long[][] values = series.computeIfAbsent(row.endpoint(), key -> new long[2][days]);
             values[0][day] += row.requests();
             values[1][day] += row.durationSumMs();
+        }
+        return series;
+    }
+
+    // DB의 API별 1시간 기록을 from부터 1시간 칸 그대로(고른 API만).
+    private Map<String, long[][]> hourlySeries(Instant from, Instant to, int hours, Set<String> endpoints) {
+        Map<String, long[][]> series = new HashMap<>();
+        for (ApiMetricHourlyRepository.EndpointHour row : hourlyRepository.readEndpointHours(from, to, endpoints)) {
+            int hour = (int) Duration.between(from, row.hourStart()).toHours();
+            if (hour < 0 || hour >= hours) continue;
+            long[][] values = series.computeIfAbsent(row.endpoint(), key -> new long[2][hours]);
+            values[0][hour] += row.requests();
+            values[1][hour] += row.durationSumMs();
         }
         return series;
     }

@@ -91,7 +91,7 @@ class ApiDashboardTests {
             assertThat(stat.requests()).isGreaterThanOrEqualTo(2);
         });
         assertThat(dashboard.dayRanking().top()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
-        assertThat(dashboard.dayTrend()).hasSize(24);
+        assertThat(dashboard.dayTrend()).hasSize(ApiDashboardService.DAY_BUCKETS);
         // 달력 기준: 이번 시간은 정각부터, 오늘은 0시부터, 이번 주는 일요일 0시부터(한국 시간).
         java.time.ZoneId seoul = java.time.ZoneId.of(dashboard.zone());
         java.time.ZonedDateTime hourFirst = dashboard.hourTrend().getFirst().startAt().atZone(seoul);
@@ -99,31 +99,40 @@ class ApiDashboardTests {
         assertThat(dashboard.hourTrend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(55);
         java.time.ZonedDateTime dayFirst = dashboard.dayTrend().getFirst().startAt().atZone(seoul);
         assertThat(dayFirst.getHour()).isZero();
-        assertThat(dashboard.dayTrend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
+        java.time.ZonedDateTime dayLast = dashboard.dayTrend().getLast().startAt().atZone(seoul);
+        assertThat(dayLast.getHour()).isEqualTo(23);
+        assertThat(dayLast.getMinute()).isEqualTo(55);
+        assertThat(dashboard.dayTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.today().requests());
         java.time.ZonedDateTime weekFirst = dashboard.weekTrend().getFirst().startAt().atZone(seoul);
         assertThat(weekFirst.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SUNDAY);
         assertThat(weekFirst.getHour()).isZero();
         java.time.ZonedDateTime weekLast = dashboard.weekTrend().getLast().startAt().atZone(seoul);
         assertThat(weekLast.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
         assertThat(weekLast.getHour()).isEqualTo(23);
-        // 이번 달: 1일부터 말일까지 하루 한 점, 이번 달 합계는 이번 주 중 이번 달에 속한 부분 이상.
+        // 이번 달: 1일 0시부터 말일 23시까지 1시간 한 점, 점들을 더하면 이번 달 합계.
         java.time.ZonedDateTime monthFirst = dashboard.monthTrend().getFirst().startAt().atZone(seoul);
         assertThat(monthFirst.getDayOfMonth()).isEqualTo(1);
         assertThat(monthFirst.getHour()).isZero();
-        assertThat(dashboard.monthTrend()).hasSize(monthFirst.toLocalDate().lengthOfMonth());
+        assertThat(dashboard.monthTrend()).hasSize(monthFirst.toLocalDate().lengthOfMonth() * 24);
+        assertThat(dashboard.monthTrend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
         assertThat(dashboard.monthTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.thisMonth().requests());
         assertThat(dashboard.hourTrend()).hasSize(12);
-        // 추이의 마지막 점(지금 시간대)에 방금 요청이 들어가 있고, 엔드포인트별 작은 추이선도 24칸.
+        // 이번 시간 추이의 점들을 더하면 이번 시간 합계.
         assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.thisHour().requests());
         // 기간별 순위: 이번 시간·오늘은 방금 요청이 들어 있고, 작은 추이선 칸 수는 기간에 맞음.
         assertThat(dashboard.hourRanking().top()).anyMatch(stat -> stat.endpoint().equals("GET /api/v1/chatRoom"));
         assertThat(dashboard.hourRanking().bins()).hasSize(12);
-        assertThat(dashboard.dayRanking().bins()).hasSize(24);
-        assertThat(dashboard.dayRanking().top().getFirst().trendRequests()).hasSize(24);
+        assertThat(dashboard.dayRanking().bins()).hasSize(ApiDashboardService.DAY_BUCKETS);
+        assertThat(dashboard.dayRanking().top().getFirst().trendRequests()).hasSize(ApiDashboardService.DAY_BUCKETS);
         assertThat(dashboard.weekRanking().bins()).hasSize(7);
         assertThat(dashboard.monthRanking().bins()).hasSize(dashboard.monthTrend().size());
+        assertThat(dashboard.monthRanking().top()).anySatisfy(stat -> {
+            assertThat(stat.trendRequests()).hasSize(dashboard.monthTrend().size());
+            assertThat(stat.trendRequests().stream().mapToLong(Long::longValue).sum()).isEqualTo(stat.requests());
+        });
         // 주·월 순위는 DB의 API별 1시간 요약에서 옴(대시보드를 열 때 1시간 요약을 먼저 저장).
         assertThat(dashboard.weekRanking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");

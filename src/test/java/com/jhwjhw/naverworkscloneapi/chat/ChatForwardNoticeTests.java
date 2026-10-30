@@ -128,6 +128,24 @@ class ChatForwardNoticeTests {
         assertThat(events.stream(ChatNoticeChangedEvent.class).filter(event -> event.notices().isEmpty())).hasSize(1);
     }
 
+    // 공지로 걸린 메시지를 고치면 공지 내용도 바뀌고 공지 변경 이벤트가 다시 나감. 공지 아닌 메시지 수정은 이벤트 없음.
+    @Test
+    void editingNoticeMessageRefreshesNotice() {
+        service.updateNotice(author.getId(), sourceRoom.getId(), messageId);
+        long before = events.stream(ChatNoticeChangedEvent.class).count();
+        service.updateMessage(author.getId(), sourceRoom.getId(), messageId,
+                new ChatRoomRequest.MessageUpdateRequest("고친 공지 내용", List.of(), 0L));
+        List<ChatNoticeChangedEvent> changed = events.stream(ChatNoticeChangedEvent.class).toList();
+        assertThat(changed).hasSize((int) before + 1);
+        assertThat(changed.getLast().notices().getFirst().content()).isEqualTo("고친 공지 내용");
+
+        Long plain = service.sendMessage(author.getId(), sourceRoom.getId(),
+                new ChatRoomRequest.MessageCreateRequest("평범한 메시지", List.of(), null)).id();
+        service.updateMessage(author.getId(), sourceRoom.getId(), plain,
+                new ChatRoomRequest.MessageUpdateRequest("평범하게 고침", List.of(), 0L));
+        assertThat(events.stream(ChatNoticeChangedEvent.class)).hasSize((int) before + 1);
+    }
+
     @Test
     void deletingNoticeMessageClearsNoticeAndSystemMessageCannotBeNotice() {
         service.updateNotice(author.getId(), sourceRoom.getId(), messageId);

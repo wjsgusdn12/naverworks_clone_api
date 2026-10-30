@@ -488,7 +488,12 @@ public class ChatRoomService {
             return message(message, readSummaries(List.of(message)).get(messageId), reactions(message, requesterId));
         }
         message.editContent(content, mentions);
-        return publishMessageChange("MESSAGE_UPDATED", requesterId, roomId, message);
+        ChatRoomResponse.Message updated = publishMessageChange("MESSAGE_UPDATED", requesterId, roomId, message);
+        // 공지로 걸린 메시지면 공지 카드 내용도 바뀌므로 공지 목록을 다시 알림.
+        if (noticeRepository.findByChatRoomIdAndChatMessageIdAndRemovedAtIsNull(roomId, messageId).isPresent()) {
+            eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, notices(roomId)));
+        }
+        return updated;
     }
 
     @Transactional

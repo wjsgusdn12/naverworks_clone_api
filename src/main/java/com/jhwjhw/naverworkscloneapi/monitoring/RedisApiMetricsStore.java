@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 // (Redis는 명령을 하나씩 차례로 처리함). 어느 서버에서 읽어도 두 서버를 합친 같은 값이 나옴.
 //
 // 저장 모양
-// - apiMetrics:bucket:{5분 칸 번호}  해시. count·e4·e5·sum·h0~h8(응답 시간 구간), ep|{엔드포인트}|c·e·s
+// - apiMetrics:bucket:{5분 칸 번호}  해시. count·e4·e5·sum·h0~h8(응답 시간 구간), ep|{엔드포인트}|c·e4·e5·s
 // - apiMetrics:servers               해시. 서버 이름 → "시작시각|보고시각|사용메모리|최대메모리|실시간연결수"
 @Component
 @ConditionalOnProperty(name = "app.redis.enabled", havingValue = "true")
@@ -48,7 +48,8 @@ public class RedisApiMetricsStore implements ApiMetricsStore {
                     for (int i = 0; i < latency.length; i++) increment(ops, key, "h" + i, latency[i]);
                     delta.getEndpoints().forEach((endpoint, stats) -> {
                         increment(ops, key, "ep|" + endpoint + "|c", stats.getCount());
-                        increment(ops, key, "ep|" + endpoint + "|e", stats.getErrors());
+                        increment(ops, key, "ep|" + endpoint + "|e4", stats.getClientErrors());
+                        increment(ops, key, "ep|" + endpoint + "|e5", stats.getServerErrors());
                         increment(ops, key, "ep|" + endpoint + "|s", stats.getDurationSumMs());
                     });
                     // 쓸 때마다 보관 기간을 다시 걸어, 오래된 칸은 Redis가 알아서 지움.
@@ -98,9 +99,10 @@ public class RedisApiMetricsStore implements ApiMetricsStore {
             String endpoint = field.substring(3, last);
             long value = number(rawValue);
             switch (field.substring(last + 1)) {
-                case "c" -> bucket.endpoint(endpoint).add(value, 0, 0);
-                case "e" -> bucket.endpoint(endpoint).add(0, value, 0);
-                case "s" -> bucket.endpoint(endpoint).add(0, 0, value);
+                case "c" -> bucket.endpoint(endpoint).add(value, 0, 0, 0);
+                case "e4" -> bucket.endpoint(endpoint).add(0, value, 0, 0);
+                case "e5" -> bucket.endpoint(endpoint).add(0, 0, value, 0);
+                case "s" -> bucket.endpoint(endpoint).add(0, 0, 0, value);
                 default -> {
                 }
             }

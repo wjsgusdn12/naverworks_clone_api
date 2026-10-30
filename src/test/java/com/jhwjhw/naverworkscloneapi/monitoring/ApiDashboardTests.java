@@ -86,11 +86,11 @@ class ApiDashboardTests {
         assertThat(dashboard.database()).isEqualTo("UP");
         assertThat(dashboard.thisHour().requests()).isEqualTo(before + 3);
         assertThat(dashboard.thisHour().clientErrors()).isGreaterThanOrEqualTo(1);
-        assertThat(dashboard.topEndpoints()).anySatisfy(stat -> {
+        assertThat(dashboard.dayRanking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");
             assertThat(stat.requests()).isGreaterThanOrEqualTo(2);
         });
-        assertThat(dashboard.topEndpoints()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
+        assertThat(dashboard.dayRanking().top()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
         assertThat(dashboard.dayTrend()).hasSize(24);
         // 달력 기준: 이번 시간은 정각부터, 오늘은 0시부터, 이번 주는 일요일 0시부터(한국 시간).
         java.time.ZoneId seoul = java.time.ZoneId.of(dashboard.zone());
@@ -117,7 +117,19 @@ class ApiDashboardTests {
         // 추이의 마지막 점(지금 시간대)에 방금 요청이 들어가 있고, 엔드포인트별 작은 추이선도 24칸.
         assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.thisHour().requests());
-        assertThat(dashboard.topEndpoints().getFirst().hourlyRequests()).hasSize(24);
+        // 기간별 순위: 이번 시간·오늘은 방금 요청이 들어 있고, 작은 추이선 칸 수는 기간에 맞음.
+        assertThat(dashboard.hourRanking().top()).anyMatch(stat -> stat.endpoint().equals("GET /api/v1/chatRoom"));
+        assertThat(dashboard.hourRanking().bins()).hasSize(12);
+        assertThat(dashboard.dayRanking().bins()).hasSize(24);
+        assertThat(dashboard.dayRanking().top().getFirst().trendRequests()).hasSize(24);
+        assertThat(dashboard.weekRanking().bins()).hasSize(7);
+        assertThat(dashboard.monthRanking().bins()).hasSize(dashboard.monthTrend().size());
+        // 주·월 순위는 DB의 API별 1시간 요약에서 옴(대시보드를 열 때 1시간 요약을 먼저 저장).
+        assertThat(dashboard.weekRanking().top()).anySatisfy(stat -> {
+            assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");
+            assertThat(stat.trendRequests()).hasSize(7);
+            assertThat(stat.trendRequests().stream().mapToLong(Long::longValue).sum()).isEqualTo(stat.requests());
+        });
         // 일주일 그래프: DB 1시간 요약 168칸, 방금 요청도 1시간 요약에 들어감.
         assertThat(dashboard.weekTrend()).hasSize(ApiDashboardService.WEEK_HOURS);
         assertThat(dashboard.thisWeek().requests()).isGreaterThanOrEqualTo(dashboard.thisHour().requests());
@@ -186,5 +198,14 @@ class ApiDashboardTests {
         assertThat(saved.getDurationSumMs()).isEqualTo(40 + 3000 + 80);
         assertThat(saved.p95Ms()).isEqualTo(5000);
         assertThat(ApiMetricsRecorder.hourOf(Instant.parse("2020-01-01T10:42:13Z"))).isEqualTo(hour);
+        // API별 행도 더해져 4xx·5xx가 나뉘어 남음.
+        java.util.Map<String, MetricsBucket.EndpointStats> endpoints = hourlyRepository.readEndpointTotals(hour,
+                hour.plusSeconds(3600));
+        assertThat(endpoints.get("GET /a").getCount()).isEqualTo(2);
+        assertThat(endpoints.get("GET /a").getServerErrors()).isEqualTo(1);
+        assertThat(endpoints.get("GET /b").getClientErrors()).isEqualTo(1);
+        assertThat(endpoints).doesNotContainKey(ApiMetricHourlyRepository.TOTAL);
+        assertThat(hourlyRepository.readEndpointHours(hour, hour.plusSeconds(3600), java.util.List.of("GET /a")))
+                .singleElement().satisfies(row -> assertThat(row.durationSumMs()).isEqualTo(3040));
     }
 }

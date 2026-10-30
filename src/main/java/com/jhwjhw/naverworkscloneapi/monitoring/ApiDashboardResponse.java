@@ -12,8 +12,7 @@ import java.util.List;
 public record ApiDashboardResponse(Instant generatedAt, String zone, String mode, String database,
         List<Server> servers, Summary thisHour, Summary today, Summary thisWeek, Summary thisMonth,
         List<TrendPoint> hourTrend, List<TrendPoint> dayTrend, List<TrendPoint> weekTrend, List<TrendPoint> monthTrend,
-        List<EndpointStat> topEndpoints,
-        List<EndpointStat> slowEndpoints) {
+        Ranking hourRanking, Ranking dayRanking, Ranking weekRanking, Ranking monthRanking) {
 
     // 기간 합계. errorRate는 5xx(서버 오류) 비율(%), p95Ms가 -1이면 5초 초과.
     public record Summary(long requests, long clientErrors, long serverErrors, double errorRate, long avgMs,
@@ -24,9 +23,13 @@ public record ApiDashboardResponse(Instant generatedAt, String zone, String mode
     public record TrendPoint(Instant startAt, long requests, long errors, long avgMs, long p95Ms) {
     }
 
-    // 오늘 기준 API 순위 한 줄. hourlyRequests·hourlyAvgMs는 오늘 0~23시 1시간 단위 값(작은 추이선용).
-    public record EndpointStat(String endpoint, long requests, long errors, long avgMs, List<Long> hourlyRequests,
-            List<Long> hourlyAvgMs) {
+    // 기간별 API 순위. bins는 작은 추이선 칸의 시작 시각(이번 시간 5분×12, 오늘 1시간×24, 이번 주 1일×7, 이번 달 1일×말일).
+    public record Ranking(List<Instant> bins, List<EndpointStat> top, List<EndpointStat> slow) {
+    }
+
+    // 순위 한 줄. trendRequests·trendAvgMs는 bins 칸마다의 호출 수·평균 응답 시간(작은 추이선용).
+    public record EndpointStat(String endpoint, long requests, long errors, long avgMs, List<Long> trendRequests,
+            List<Long> trendAvgMs) {
     }
 
     // current: 지금 이 응답을 만든 서버

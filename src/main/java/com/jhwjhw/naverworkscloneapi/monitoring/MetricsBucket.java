@@ -21,25 +21,34 @@ public class MetricsBucket {
     // 엔드포인트("GET /api/v1/chatRoom" 형태)별 집계
     private final Map<String, EndpointStats> endpoints = new HashMap<>();
 
+    // API 하나의 집계. 오류는 4xx(요청 쪽)·5xx(서버 쪽)로 나눠 셈.
     @Getter
     public static final class EndpointStats {
         private long count;
-        private long errors;
+        private long clientErrors;
+        private long serverErrors;
         private long durationSumMs;
 
-        public void add(long count, long errors, long durationSumMs) {
+        public void add(long count, long clientErrors, long serverErrors, long durationSumMs) {
             this.count += count;
-            this.errors += errors;
+            this.clientErrors += clientErrors;
+            this.serverErrors += serverErrors;
             this.durationSumMs += durationSumMs;
+        }
+
+        // 4xx + 5xx
+        public long getErrors() {
+            return clientErrors + serverErrors;
         }
     }
 
     // 요청 한 건 기록
     public void record(String endpoint, int status, long durationMs) {
-        boolean error = status >= 400;
-        addTotals(1, status >= 400 && status < 500 ? 1 : 0, status >= 500 ? 1 : 0, durationMs);
+        long clientError = status >= 400 && status < 500 ? 1 : 0;
+        long serverError = status >= 500 ? 1 : 0;
+        addTotals(1, clientError, serverError, durationMs);
         latencyCounts[latencyIndex(durationMs)] += 1;
-        endpoints.computeIfAbsent(endpoint, key -> new EndpointStats()).add(1, error ? 1 : 0, durationMs);
+        endpoints.computeIfAbsent(endpoint, key -> new EndpointStats()).add(1, clientError, serverError, durationMs);
     }
 
     // 다른 칸(다른 서버·다른 시간)의 값을 이 칸에 더함
@@ -47,7 +56,7 @@ public class MetricsBucket {
         addTotals(other.count, other.clientErrors, other.serverErrors, other.durationSumMs);
         for (int i = 0; i < latencyCounts.length; i++) latencyCounts[i] += other.latencyCounts[i];
         other.endpoints.forEach((endpoint, stats) -> endpoints.computeIfAbsent(endpoint, key -> new EndpointStats())
-                .add(stats.count, stats.errors, stats.durationSumMs));
+                .add(stats.count, stats.clientErrors, stats.serverErrors, stats.durationSumMs));
     }
 
     // 저장소에서 읽어 온 값을 채울 때 사용

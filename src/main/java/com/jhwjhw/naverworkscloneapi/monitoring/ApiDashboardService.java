@@ -14,7 +14,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -101,19 +104,25 @@ public class ApiDashboardService {
         long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
         Map<Long, MetricsBucket> buckets = store.read(dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
 
-        // 이번 시간: 5분 칸 12개 그대로
+        // 이번 시간: 5분 칸 12개 그대로. API별 5분 [호출 수, 걸린 시간 합]도 모음(순위 옆 작은 추이선용).
         MetricsBucket thisHour = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> hourTrend = new ArrayList<>();
-        for (long bucket = hourFirstBucket; bucket < hourFirstBucket + BUCKETS_PER_HOUR; bucket++) {
+        List<Instant> hourBins = new ArrayList<>();
+        Map<String, long[][]> hourSeries = new HashMap<>();
+        for (int index = 0; index < BUCKETS_PER_HOUR; index++) {
+            long bucket = hourFirstBucket + index;
             MetricsBucket data = buckets.getOrDefault(bucket, new MetricsBucket());
             thisHour.add(data);
             hourTrend.add(point(bucket, data));
+            hourBins.add(Instant.ofEpochSecond(bucket * ApiMetricsRecorder.BUCKET_SECONDS));
+            collect(hourSeries, data, index, (int) BUCKETS_PER_HOUR);
         }
 
-        // 오늘: 5분 칸 12개씩 묶어 1시간 점 24개. API별 1시간 [호출 수, 걸린 시간 합]도 함께 모음(작은 추이선용).
+        // 오늘: 5분 칸 12개씩 묶어 1시간 점 24개. API별 1시간 값도 함께 모음.
         MetricsBucket today = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> dayTrend = new ArrayList<>();
-        Map<String, long[][]> hourlyByEndpoint = new HashMap<>();
+        List<Instant> dayBins = new ArrayList<>();
+        Map<String, long[][]> daySeries = new HashMap<>();
         for (int hour = 0; hour < DAY_HOURS; hour++) {
             MetricsBucket hourly = new MetricsBucket();
             long start = dayFirstBucket + hour * BUCKETS_PER_HOUR;
@@ -123,38 +132,23 @@ public class ApiDashboardService {
             }
             today.add(hourly);
             dayTrend.add(point(start, hourly));
-            int hourIndex = hour;
-            hourly.getEndpoints().forEach((endpoint, stats) -> {
-                long[][] series = hourlyByEndpoint.computeIfAbsent(endpoint, key -> new long[2][DAY_HOURS]);
-                series[0][hourIndex] = stats.getCount();
-                series[1][hourIndex] = stats.getDurationSumMs();
-            });
+            dayBins.add(Instant.ofEpochSecond(start * ApiMetricsRecorder.BUCKET_SECONDS));
+            collect(daySeries, hourly, hour, DAY_HOURS);
         }
 
-        // API 순위는 오늘 기준
-        List<ApiDashboardResponse.EndpointStat> endpoints = today.getEndpoints().entrySet().stream()
-                .map(entry -> {
-                    long[][] series = hourlyByEndpoint.getOrDefault(entry.getKey(), new long[2][DAY_HOURS]);
-                    List<Long> hourlyRequests = new ArrayList<>();
-                    List<Long> hourlyAvgMs = new ArrayList<>();
-                    for (int hour = 0; hour < DAY_HOURS; hour++) {
-                        hourlyRequests.add(series[0][hour]);
-                        hourlyAvgMs.add(average(series[1][hour], series[0][hour]));
-                    }
-                    return new ApiDashboardResponse.EndpointStat(entry.getKey(), entry.getValue().getCount(),
-                            entry.getValue().getErrors(),
-                            average(entry.getValue().getDurationSumMs(), entry.getValue().getCount()), hourlyRequests,
-                            hourlyAvgMs);
-                })
-                .toList();
-        List<ApiDashboardResponse.EndpointStat> top = endpoints.stream()
-                .sorted(Comparator.comparingLong(ApiDashboardResponse.EndpointStat::requests).reversed())
-                .limit(TOP_COUNT).toList();
-        List<ApiDashboardResponse.EndpointStat> slowCandidates = endpoints.stream()
-                .filter(stat -> stat.requests() >= SLOW_MIN_REQUESTS).toList();
-        List<ApiDashboardResponse.EndpointStat> slow = (slowCandidates.isEmpty() ? endpoints : slowCandidates).stream()
-                .sorted(Comparator.comparingLong(ApiDashboardResponse.EndpointStat::avgMs).reversed())
-                .limit(TOP_COUNT).toList();
+        // 이번 주·이번 달 순위: DB의 API별 1시간 요약을 기간 합계로 읽고, 작은 추이선은 하루 단위로 묶음.
+        LocalDate weekFirstDay = weekStart.atZone(zone).toLocalDate();
+        Instant weekEnd = weekFirstDay.plusDays(7).atStartOfDay(zone).toInstant();
+        Instant monthEnd = monthFirstDay.plusMonths(1).atStartOfDay(zone).toInstant();
+        List<Instant> weekBins = dayStarts(weekFirstDay, 7);
+        List<Instant> monthBins = dayStarts(monthFirstDay, monthFirstDay.lengthOfMonth());
+
+        ApiDashboardResponse.Ranking hourRanking = ranking(thisHour.getEndpoints(), hourBins, names -> hourSeries);
+        ApiDashboardResponse.Ranking dayRanking = ranking(today.getEndpoints(), dayBins, names -> daySeries);
+        ApiDashboardResponse.Ranking weekRanking = ranking(hourlyRepository.readEndpointTotals(weekStart, weekEnd),
+                weekBins, names -> dailySeries(weekStart, weekEnd, weekFirstDay, weekBins.size(), names));
+        ApiDashboardResponse.Ranking monthRanking = ranking(hourlyRepository.readEndpointTotals(monthStart, monthEnd),
+                monthBins, names -> dailySeries(monthStart, monthEnd, monthFirstDay, monthBins.size(), names));
 
         List<ApiDashboardResponse.Server> servers = store.servers(now).stream()
                 .map(status -> new ApiDashboardResponse.Server(status.instanceId(), status.startedAt(),
@@ -163,7 +157,72 @@ public class ApiDashboardService {
                 .toList();
 
         return new ApiDashboardResponse(now, zone.getId(), store.mode(), databaseStatus(), servers, summary(thisHour),
-                summary(today), summary(thisWeek), summary(thisMonth), hourTrend, dayTrend, weekTrend, monthTrend, top, slow);
+                summary(today), summary(thisWeek), summary(thisMonth), hourTrend, dayTrend, weekTrend, monthTrend,
+                hourRanking, dayRanking, weekRanking, monthRanking);
+    }
+
+    // 한 칸(index)의 API별 [호출 수, 걸린 시간 합]을 series에 더함.
+    private static void collect(Map<String, long[][]> series, MetricsBucket data, int index, int size) {
+        data.getEndpoints().forEach((endpoint, stats) -> {
+            long[][] values = series.computeIfAbsent(endpoint, key -> new long[2][size]);
+            values[0][index] += stats.getCount();
+            values[1][index] += stats.getDurationSumMs();
+        });
+    }
+
+    // firstDay부터 days일의 0시 시각 목록
+    private List<Instant> dayStarts(LocalDate firstDay, int days) {
+        List<Instant> starts = new ArrayList<>();
+        for (int day = 0; day < days; day++) starts.add(firstDay.plusDays(day).atStartOfDay(zone).toInstant());
+        return starts;
+    }
+
+    // DB의 API별 1시간 기록을 하루 단위로 묶음(고른 API만).
+    private Map<String, long[][]> dailySeries(Instant from, Instant to, LocalDate firstDay, int days,
+            Set<String> endpoints) {
+        Map<String, long[][]> series = new HashMap<>();
+        for (ApiMetricHourlyRepository.EndpointHour row : hourlyRepository.readEndpointHours(from, to, endpoints)) {
+            int day = (int) ChronoUnit.DAYS.between(firstDay, row.hourStart().atZone(zone).toLocalDate());
+            if (day < 0 || day >= days) continue;
+            long[][] values = series.computeIfAbsent(row.endpoint(), key -> new long[2][days]);
+            values[0][day] += row.requests();
+            values[1][day] += row.durationSumMs();
+        }
+        return series;
+    }
+
+    // 기간의 API별 합계로 순위를 만듦: 많이 호출된 5개, 평균이 느린 5개(5회 이상 호출만, 없으면 전부 중에서).
+    // 작은 추이선은 순위에 든 API만 읽어 옴(seriesOf).
+    private static ApiDashboardResponse.Ranking ranking(Map<String, MetricsBucket.EndpointStats> totals,
+            List<Instant> bins, Function<Set<String>, Map<String, long[][]>> seriesOf) {
+        List<Map.Entry<String, MetricsBucket.EndpointStats>> entries = new ArrayList<>(totals.entrySet());
+        List<String> top = entries.stream()
+                .sorted(Comparator.comparingLong(
+                        (Map.Entry<String, MetricsBucket.EndpointStats> entry) -> entry.getValue().getCount()).reversed())
+                .limit(TOP_COUNT).map(Map.Entry::getKey).toList();
+        List<Map.Entry<String, MetricsBucket.EndpointStats>> slowCandidates = entries.stream()
+                .filter(entry -> entry.getValue().getCount() >= SLOW_MIN_REQUESTS).toList();
+        List<String> slow = (slowCandidates.isEmpty() ? entries : slowCandidates).stream()
+                .sorted(Comparator.comparingLong((Map.Entry<String, MetricsBucket.EndpointStats> entry) -> average(
+                        entry.getValue().getDurationSumMs(), entry.getValue().getCount())).reversed())
+                .limit(TOP_COUNT).map(Map.Entry::getKey).toList();
+        Set<String> needed = new LinkedHashSet<>(top);
+        needed.addAll(slow);
+        Map<String, long[][]> series = seriesOf.apply(needed);
+        Function<String, ApiDashboardResponse.EndpointStat> toStat = endpoint -> {
+            MetricsBucket.EndpointStats stats = totals.get(endpoint);
+            long[][] values = series.getOrDefault(endpoint, new long[2][bins.size()]);
+            List<Long> requests = new ArrayList<>();
+            List<Long> averages = new ArrayList<>();
+            for (int index = 0; index < bins.size(); index++) {
+                requests.add(values[0][index]);
+                averages.add(average(values[1][index], values[0][index]));
+            }
+            return new ApiDashboardResponse.EndpointStat(endpoint, stats.getCount(), stats.getErrors(),
+                    average(stats.getDurationSumMs(), stats.getCount()), requests, averages);
+        };
+        return new ApiDashboardResponse.Ranking(bins, top.stream().map(toStat).toList(),
+                slow.stream().map(toStat).toList());
     }
 
     // startBucket부터 시작하는 5분 구간 하나를 추이 한 점으로.

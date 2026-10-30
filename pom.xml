@@ -48,6 +48,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
+		<!-- 서버 여러 대가 함께 쓰는 공용 저장소(Redis) 연결. API 대시보드 집계·접속 상태 공유에 사용. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
 		<!-- PostgreSQL 데이터를 객체(Entity)로 다루기 위한 JPA. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

@@ -71,6 +71,11 @@ public class PresenceService {
         publish(membershipId, false);
     }
 
+    // 이 서버에 붙어 있는 실시간(WebSocket) 연결 수. API 대시보드의 서버 상태에 표시.
+    public int connectionCount() {
+        return membershipBySessionId.size();
+    }
+
     // 주소록 조회는 연결 중인 세션이 하나라도 있으면 온라인으로 표시.
     public boolean isOnline(Long membershipId) {
         Set<String> sessionIds = sessionIdsByMembershipId.get(membershipId);

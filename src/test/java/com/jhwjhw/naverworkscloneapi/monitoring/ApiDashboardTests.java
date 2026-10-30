@@ -77,74 +77,82 @@ class ApiDashboardTests {
     // 실제 요청이 엔드포인트 패턴별로 세지고, 보안에서 막힌 요청(401)도 함께 세짐. 대시보드 자신의 조회는 빠짐.
     @Test
     void realRequestsAreCountedByEndpointPattern() throws Exception {
-        long before = dashboardService.dashboard().thisHour().requests();
+        long before = dashboardService.dashboard(ApiDashboardService.Range.HOUR).summary().requests();
         mvc.perform(get("/api/v1/chatRoom").header("Authorization", bearer(user))).andExpect(status().isOk());
         mvc.perform(get("/api/v1/chatRoom").header("Authorization", bearer(user))).andExpect(status().isOk());
         mvc.perform(get("/api/v1/chatRoom")).andExpect(status().isUnauthorized());
         mvc.perform(get(ApiDashboardController.PATH).header("Authorization", bearer(admin)));
 
-        ApiDashboardResponse dashboard = dashboardService.dashboard();
-        assertThat(dashboard.mode()).isEqualTo("LOCAL");
-        assertThat(dashboard.database()).isEqualTo("UP");
-        assertThat(dashboard.thisHour().requests()).isEqualTo(before + 3);
-        assertThat(dashboard.thisHour().clientErrors()).isGreaterThanOrEqualTo(1);
-        assertThat(dashboard.dayRanking().top()).anySatisfy(stat -> {
+        // 이번 시간: 1분 칸 60개(정각~59분), 점들을 더하면 숫자 카드 합계.
+        ApiDashboardResponse hour = dashboardService.dashboard(ApiDashboardService.Range.HOUR);
+        assertThat(hour.range()).isEqualTo("HOUR");
+        assertThat(hour.mode()).isEqualTo("LOCAL");
+        assertThat(hour.database()).isEqualTo("UP");
+        assertThat(hour.summary().requests()).isEqualTo(before + 3);
+        assertThat(hour.summary().clientErrors()).isGreaterThanOrEqualTo(1);
+        java.time.ZoneId seoul = java.time.ZoneId.of(hour.zone());
+        assertThat(hour.trend()).hasSize(ApiDashboardService.HOUR_MINUTES);
+        assertThat(hour.trend().getFirst().startAt().atZone(seoul).getMinute()).isZero();
+        assertThat(hour.trend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(59);
+        assertThat(hour.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(hour.summary().requests());
+        // 히트맵용 응답 시간 구간별 개수(9칸)를 더하면 그 칸의 요청 수.
+        assertThat(hour.trend()).allSatisfy(point -> {
+            assertThat(point.latency()).hasSize(MetricsBucket.LATENCY_BOUNDS_MS.length + 1);
+            assertThat(point.latency().stream().mapToLong(Long::longValue).sum()).isEqualTo(point.requests());
+        });
+        assertThat(hour.ranking().top()).anyMatch(stat -> stat.endpoint().equals("GET /api/v1/chatRoom"));
+        assertThat(hour.ranking().bins()).hasSize(ApiDashboardService.HOUR_MINUTES);
+        assertThat(hour.servers()).anyMatch(ApiDashboardResponse.Server::current);
+
+        // 오늘: 0시부터 5분 칸 288개, 대시보드 자신의 조회는 순위에서 빠짐.
+        ApiDashboardResponse day = dashboardService.dashboard(ApiDashboardService.Range.DAY);
+        assertThat(day.trend()).hasSize(ApiDashboardService.DAY_BUCKETS);
+        assertThat(day.trend().getFirst().startAt().atZone(seoul).getHour()).isZero();
+        java.time.ZonedDateTime dayLast = day.trend().getLast().startAt().atZone(seoul);
+        assertThat(dayLast.getHour()).isEqualTo(23);
+        assertThat(dayLast.getMinute()).isEqualTo(55);
+        assertThat(day.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(day.summary().requests());
+        assertThat(day.ranking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");
             assertThat(stat.requests()).isGreaterThanOrEqualTo(2);
         });
-        assertThat(dashboard.dayRanking().top()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
-        assertThat(dashboard.dayTrend()).hasSize(ApiDashboardService.DAY_BUCKETS);
-        // 달력 기준: 이번 시간은 정각부터, 오늘은 0시부터, 이번 주는 일요일 0시부터(한국 시간).
-        java.time.ZoneId seoul = java.time.ZoneId.of(dashboard.zone());
-        java.time.ZonedDateTime hourFirst = dashboard.hourTrend().getFirst().startAt().atZone(seoul);
-        assertThat(hourFirst.getMinute()).isZero();
-        assertThat(dashboard.hourTrend().getLast().startAt().atZone(seoul).getMinute()).isEqualTo(59);
-        java.time.ZonedDateTime dayFirst = dashboard.dayTrend().getFirst().startAt().atZone(seoul);
-        assertThat(dayFirst.getHour()).isZero();
-        java.time.ZonedDateTime dayLast = dashboard.dayTrend().getLast().startAt().atZone(seoul);
-        assertThat(dayLast.getHour()).isEqualTo(23);
-        assertThat(dayLast.getMinute()).isEqualTo(55);
-        assertThat(dashboard.dayTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
-                .isEqualTo(dashboard.today().requests());
-        java.time.ZonedDateTime weekFirst = dashboard.weekTrend().getFirst().startAt().atZone(seoul);
+        assertThat(day.ranking().top()).noneMatch(stat -> stat.endpoint().contains("apiDashboard"));
+        assertThat(day.ranking().bins()).hasSize(ApiDashboardService.DAY_BUCKETS);
+        assertThat(day.ranking().top().getFirst().trendRequests()).hasSize(ApiDashboardService.DAY_BUCKETS);
+
+        // 이번 주: 일요일 0시~토요일 23시 1시간 칸 168개, 순위 추이선은 하루 7칸.
+        ApiDashboardResponse week = dashboardService.dashboard(ApiDashboardService.Range.WEEK);
+        assertThat(week.trend()).hasSize(ApiDashboardService.WEEK_HOURS);
+        java.time.ZonedDateTime weekFirst = week.trend().getFirst().startAt().atZone(seoul);
         assertThat(weekFirst.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SUNDAY);
         assertThat(weekFirst.getHour()).isZero();
-        java.time.ZonedDateTime weekLast = dashboard.weekTrend().getLast().startAt().atZone(seoul);
+        java.time.ZonedDateTime weekLast = week.trend().getLast().startAt().atZone(seoul);
         assertThat(weekLast.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
         assertThat(weekLast.getHour()).isEqualTo(23);
-        // 이번 달: 1일 0시부터 말일 23시까지 1시간 한 점, 점들을 더하면 이번 달 합계.
-        java.time.ZonedDateTime monthFirst = dashboard.monthTrend().getFirst().startAt().atZone(seoul);
-        assertThat(monthFirst.getDayOfMonth()).isEqualTo(1);
-        assertThat(monthFirst.getHour()).isZero();
-        assertThat(dashboard.monthTrend()).hasSize(monthFirst.toLocalDate().lengthOfMonth() * 24);
-        assertThat(dashboard.monthTrend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
-        assertThat(dashboard.monthTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
-                .isEqualTo(dashboard.thisMonth().requests());
-        assertThat(dashboard.hourTrend()).hasSize(ApiDashboardService.HOUR_MINUTES);
-        // 이번 시간 추이의 점들을 더하면 이번 시간 합계.
-        assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
-                .isEqualTo(dashboard.thisHour().requests());
-        // 기간별 순위: 이번 시간·오늘은 방금 요청이 들어 있고, 작은 추이선 칸 수는 기간에 맞음.
-        assertThat(dashboard.hourRanking().top()).anyMatch(stat -> stat.endpoint().equals("GET /api/v1/chatRoom"));
-        assertThat(dashboard.hourRanking().bins()).hasSize(ApiDashboardService.HOUR_MINUTES);
-        assertThat(dashboard.dayRanking().bins()).hasSize(ApiDashboardService.DAY_BUCKETS);
-        assertThat(dashboard.dayRanking().top().getFirst().trendRequests()).hasSize(ApiDashboardService.DAY_BUCKETS);
-        assertThat(dashboard.weekRanking().bins()).hasSize(7);
-        assertThat(dashboard.monthRanking().bins()).hasSize(dashboard.monthTrend().size());
-        assertThat(dashboard.monthRanking().top()).anySatisfy(stat -> {
-            assertThat(stat.trendRequests()).hasSize(dashboard.monthTrend().size());
-            assertThat(stat.trendRequests().stream().mapToLong(Long::longValue).sum()).isEqualTo(stat.requests());
-        });
-        // 주·월 순위는 DB의 API별 1시간 요약에서 옴(대시보드를 열 때 1시간 요약을 먼저 저장).
-        assertThat(dashboard.weekRanking().top()).anySatisfy(stat -> {
+        assertThat(week.summary().requests()).isGreaterThanOrEqualTo(hour.summary().requests());
+        assertThat(week.ranking().bins()).hasSize(7);
+        assertThat(week.ranking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/chatRoom");
             assertThat(stat.trendRequests()).hasSize(7);
             assertThat(stat.trendRequests().stream().mapToLong(Long::longValue).sum()).isEqualTo(stat.requests());
         });
-        // 일주일 그래프: DB 1시간 요약 168칸, 방금 요청도 1시간 요약에 들어감.
-        assertThat(dashboard.weekTrend()).hasSize(ApiDashboardService.WEEK_HOURS);
-        assertThat(dashboard.thisWeek().requests()).isGreaterThanOrEqualTo(dashboard.thisHour().requests());
-        assertThat(dashboard.servers()).anyMatch(ApiDashboardResponse.Server::current);
+
+        // 이번 달: 1일 0시~말일 23시 1시간 칸, 점들을 더하면 이번 달 합계.
+        ApiDashboardResponse month = dashboardService.dashboard(ApiDashboardService.Range.MONTH);
+        java.time.ZonedDateTime monthFirst = month.trend().getFirst().startAt().atZone(seoul);
+        assertThat(monthFirst.getDayOfMonth()).isEqualTo(1);
+        assertThat(monthFirst.getHour()).isZero();
+        assertThat(month.trend()).hasSize(monthFirst.toLocalDate().lengthOfMonth() * 24);
+        assertThat(month.trend().getLast().startAt().atZone(seoul).getHour()).isEqualTo(23);
+        assertThat(month.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(month.summary().requests());
+        assertThat(month.ranking().bins()).hasSize(month.trend().size());
+        assertThat(month.ranking().top()).anySatisfy(stat -> {
+            assertThat(stat.trendRequests()).hasSize(month.trend().size());
+            assertThat(stat.trendRequests().stream().mapToLong(Long::longValue).sum()).isEqualTo(stat.requests());
+        });
     }
 
     // 핵심: 서버 1·2가 각자 모은 기록을 같은 DB에 보내면 어느 쪽에서 읽어도 합계가 나오고, 재시작해도 남음.
@@ -215,20 +223,20 @@ class ApiDashboardTests {
         for (int i = 0; i < 7; i++) past.record("GET /api/v1/pastOnly", 200, 40);
         hourlyRepository.addHour(hour, past);
 
-        ApiDashboardResponse dashboard = dashboardService.dashboard();
+        ApiDashboardResponse dashboard = dashboardService.dashboard(ApiDashboardService.Range.DAY);
         // 그 시간의 첫 5분 칸에 1시간 합계 점 하나(spanMinutes 60), 나머지 11칸은 묶음에 포함(0).
         int first = hourIndex * 12;
-        ApiDashboardResponse.TrendPoint point = dashboard.dayTrend().get(first);
+        ApiDashboardResponse.TrendPoint point = dashboard.trend().get(first);
         assertThat(point.startAt()).isEqualTo(hour);
         assertThat(point.requests()).isEqualTo(7);
         assertThat(point.spanMinutes()).isEqualTo(60);
-        assertThat(dashboard.dayTrend().subList(first + 1, first + 12))
+        assertThat(dashboard.trend().subList(first + 1, first + 12))
                 .allSatisfy(item -> assertThat(item.spanMinutes()).isZero());
         // 숫자 카드·그래프 합계가 1시간 요약과 맞고, 순위에도 그 시간의 API가 들어감.
-        assertThat(dashboard.today().requests()).isGreaterThanOrEqualTo(7);
-        assertThat(dashboard.dayTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
-                .isEqualTo(dashboard.today().requests());
-        assertThat(dashboard.dayRanking().top()).anySatisfy(stat -> {
+        assertThat(dashboard.summary().requests()).isGreaterThanOrEqualTo(7);
+        assertThat(dashboard.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.summary().requests());
+        assertThat(dashboard.ranking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/pastOnly");
             assertThat(stat.requests()).isEqualTo(7);
             assertThat(stat.trendRequests().get(first)).isEqualTo(7);
@@ -246,7 +254,8 @@ class ApiDashboardTests {
         MetricsBucket slow = new MetricsBucket();
         for (int i = 0; i < 90; i++) slow.record("GET /a", 200, 40);
         for (int i = 0; i < 10; i++) slow.record("GET /a", 200, 3000);
-        assertThat(slow.p95Ms()).isEqualTo(5000);
+        // 95번째 요청은 2000~5000ms 구간 10건 중 5번째 → 구간 안에서 비례 계산하면 3500ms
+        assertThat(slow.p95Ms()).isEqualTo(3500);
 
         MetricsBucket verySlow = new MetricsBucket();
         verySlow.record("GET /a", 200, 9000);

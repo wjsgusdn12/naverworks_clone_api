@@ -79,14 +79,22 @@ public class MetricsBucket {
         return count == 0;
     }
 
-    // 전체 요청의 95%가 이 시간 안에 끝났다는 값(구간의 위쪽 경계). 5초 초과 구간이면 -1.
+    // 전체 요청의 95%가 이 시간 안에 끝났다는 값(추정). 5초 초과 구간이면 -1.
+    // 95번째 요청이 든 구간 안에서 몇 번째인지로 비례 계산(선형 보간, 프로메테우스와 같은 방식).
+    // 예: 500~1000ms 구간에 10건이 있고 그중 3번째가 95번째면 500 + 500 × 3/10 = 650ms.
+    // (구간의 위쪽 끝만 쓰면 500~1000ms 사이 요청이 모두 1000ms로 보임)
     public long p95Ms() {
         if (count == 0) return 0;
         long target = (long) Math.ceil(count * 0.95);
         long cumulative = 0;
         for (int i = 0; i < latencyCounts.length; i++) {
+            long before = cumulative;
             cumulative += latencyCounts[i];
-            if (cumulative >= target) return i < LATENCY_BOUNDS_MS.length ? LATENCY_BOUNDS_MS[i] : -1;
+            if (cumulative < target) continue;
+            if (i >= LATENCY_BOUNDS_MS.length) return -1;
+            long lower = i == 0 ? 0 : LATENCY_BOUNDS_MS[i - 1];
+            long upper = LATENCY_BOUNDS_MS[i];
+            return Math.round(lower + (upper - lower) * (double) (target - before) / latencyCounts[i]);
         }
         return -1;
     }

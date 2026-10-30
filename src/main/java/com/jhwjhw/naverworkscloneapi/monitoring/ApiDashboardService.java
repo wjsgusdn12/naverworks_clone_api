@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 // - 이번 시간: 14:00~14:59 (5분 점 12개)
 // - 오늘: 00:00~23:59 (1시간 점 24개)
 // - 이번 주: 일요일 00시~토요일 23시 (1시간 점 168개)
+// - 이번 달: 1일~말일 (1일 점 28~31개)
 // 아직 오지 않은 시간의 점도 자리는 만들어 두고(값 0), 화면이 "기록 전"으로 비워 그림.
 @Service
 public class ApiDashboardService {
@@ -64,9 +66,12 @@ public class ApiDashboardService {
         Instant dayStart = local.toLocalDate().atStartOfDay(zone).toInstant();
         Instant weekStart = local.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
                 .atStartOfDay(zone).toInstant();
+        LocalDate monthFirstDay = local.toLocalDate().withDayOfMonth(1);
+        Instant monthStart = monthFirstDay.atStartOfDay(zone).toInstant();
 
-        // 이번 주: DB의 1시간 요약 168칸
-        Map<Instant, MetricsBucket> weekHours = hourlyRepository.readTotals(weekStart);
+        // 이번 주·이번 달은 DB의 1시간 요약에서 읽음(주가 지난달에 걸칠 수 있어 더 이른 쪽부터 한 번에 읽음).
+        Map<Instant, MetricsBucket> weekHours = hourlyRepository
+                .readTotals(weekStart.isBefore(monthStart) ? weekStart : monthStart);
         MetricsBucket thisWeek = new MetricsBucket();
         List<ApiDashboardResponse.TrendPoint> weekTrend = new ArrayList<>();
         for (int hour = 0; hour < WEEK_HOURS; hour++) {
@@ -74,6 +79,21 @@ public class ApiDashboardService {
             MetricsBucket data = weekHours.getOrDefault(start, new MetricsBucket());
             thisWeek.add(data);
             weekTrend.add(point(start, data));
+        }
+
+        // 이번 달: 1시간 요약을 하루씩 묶음(그 날의 0시~23시)
+        MetricsBucket thisMonth = new MetricsBucket();
+        List<ApiDashboardResponse.TrendPoint> monthTrend = new ArrayList<>();
+        for (int day = 0; day < monthFirstDay.lengthOfMonth(); day++) {
+            ZonedDateTime dateStart = monthFirstDay.plusDays(day).atStartOfDay(zone);
+            Instant nextDay = dateStart.plusDays(1).toInstant();
+            MetricsBucket daily = new MetricsBucket();
+            for (Instant hour = dateStart.toInstant(); hour.isBefore(nextDay); hour = hour.plus(Duration.ofHours(1))) {
+                MetricsBucket data = weekHours.get(hour);
+                if (data != null) daily.add(data);
+            }
+            thisMonth.add(daily);
+            monthTrend.add(point(dateStart.toInstant(), daily));
         }
 
         // 오늘 0시부터 지금까지의 5분 칸(집계판은 25시간치를 갖고 있어 하루를 모두 덮음)
@@ -143,7 +163,7 @@ public class ApiDashboardService {
                 .toList();
 
         return new ApiDashboardResponse(now, zone.getId(), store.mode(), databaseStatus(), servers, summary(thisHour),
-                summary(today), summary(thisWeek), hourTrend, dayTrend, weekTrend, top, slow);
+                summary(today), summary(thisWeek), summary(thisMonth), hourTrend, dayTrend, weekTrend, monthTrend, top, slow);
     }
 
     // startBucket부터 시작하는 5분 구간 하나를 추이 한 점으로.

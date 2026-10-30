@@ -106,6 +106,13 @@ class ApiDashboardTests {
         java.time.ZonedDateTime weekLast = dashboard.weekTrend().getLast().startAt().atZone(seoul);
         assertThat(weekLast.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
         assertThat(weekLast.getHour()).isEqualTo(23);
+        // 이번 달: 1일부터 말일까지 하루 한 점, 이번 달 합계는 이번 주 중 이번 달에 속한 부분 이상.
+        java.time.ZonedDateTime monthFirst = dashboard.monthTrend().getFirst().startAt().atZone(seoul);
+        assertThat(monthFirst.getDayOfMonth()).isEqualTo(1);
+        assertThat(monthFirst.getHour()).isZero();
+        assertThat(dashboard.monthTrend()).hasSize(monthFirst.toLocalDate().lengthOfMonth());
+        assertThat(dashboard.monthTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
+                .isEqualTo(dashboard.thisMonth().requests());
         assertThat(dashboard.hourTrend()).hasSize(12);
         // 추이의 마지막 점(지금 시간대)에 방금 요청이 들어가 있고, 엔드포인트별 작은 추이선도 24칸.
         assertThat(dashboard.hourTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())

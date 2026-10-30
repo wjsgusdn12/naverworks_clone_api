@@ -8,9 +8,11 @@ import java.util.List;
 // hourTrend: 이번 시간 ??:00~??:59 5분 단위 12점
 // dayTrend: 오늘 00:00~23:59 1시간 단위 24점
 // weekTrend: 이번 주 일요일 00시~토요일 23시 1시간 단위 168점(DB의 1시간 요약)
+// monthTrend: 이번 달 1일~말일 1일 단위(DB의 1시간 요약을 하루씩 묶음)
 public record ApiDashboardResponse(Instant generatedAt, String zone, String mode, String database,
-        List<Server> servers, Summary thisHour, Summary today, Summary thisWeek, List<TrendPoint> hourTrend,
-        List<TrendPoint> dayTrend, List<TrendPoint> weekTrend, List<EndpointStat> topEndpoints,
+        List<Server> servers, Summary thisHour, Summary today, Summary thisWeek, Summary thisMonth,
+        List<TrendPoint> hourTrend, List<TrendPoint> dayTrend, List<TrendPoint> weekTrend, List<TrendPoint> monthTrend,
+        List<EndpointStat> topEndpoints,
         List<EndpointStat> slowEndpoints) {
 
     // 기간 합계. errorRate는 5xx(서버 오류) 비율(%), p95Ms가 -1이면 5초 초과.

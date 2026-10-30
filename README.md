@@ -199,7 +199,7 @@ erDiagram
 
 ## 5. 인증과 세션
 
-Access Token은 3시간, Refresh Token은 최초 로그인 기준 최대 7일입니다. Refresh는 회전하지만 세션의 절대 만료 시각은 늘어나지 않아, 한 번 로그인하면 7일 뒤에는 반드시 다시 로그인합니다.
+Access Token은 3시간, Refresh Token은 최초 로그인 기준 최대 24시간입니다. Refresh는 회전하지만 세션의 절대 만료 시각은 늘어나지 않아, 한 번 로그인하면 24시간 뒤에는 반드시 다시 로그인합니다.
 
 <!-- diagram: auth-flow -->
 ```mermaid
@@ -221,7 +221,7 @@ sequenceDiagram
     U->>F: 아이디 · 비밀번호
     F->>A: POST /auth/login
     A->>D: 계정 조회 · 해시 비교
-    A->>D: Refresh Token 해시 저장 (세션 만료 7일)
+    A->>D: Refresh Token 해시 저장 (세션 만료 24시간)
     A-->>F: Access Token (3h) + Refresh Token
     F-->>U: 홈 화면
 

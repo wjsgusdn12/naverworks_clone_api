@@ -27,7 +27,7 @@ public final class SignupResponse {
     public record InviteCode(String companyName, String inviteCode) {
     }
 
-    // 계정 찾기 1단계: 아이디는 일부만 가려서 보여 줌(예: ne***01). canReset은 복구 코드로 확인했을 때만 true.
-    public record RecoverLookup(String maskedLoginId, String displayName, boolean canReset) {
+    // 계정 찾기 1단계: 본인 확인이 끝나면 아이디를 알려 줌(아이디 찾기). 이메일 형식 아이디만 가림. 이어서 비밀번호 재설정도 가능.
+    public record RecoverLookup(String loginId, String displayName) {
     }
 }

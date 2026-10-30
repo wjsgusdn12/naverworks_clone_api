@@ -400,8 +400,7 @@ class AuthControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + identity + "}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.maskedLoginId").value("id******01"))
-                .andExpect(jsonPath("$.data.canReset").value(true));
+                .andExpect(jsonPath("$.data.loginId").value("identity01"));
         mockMvc.perform(post("/api/v1/auth/recover/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + identity + ",\"newPassword\":\"new-pass-456\"}"))
@@ -437,9 +436,8 @@ class AuthControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"recoveryCode\":\"" + recoveryCode.toLowerCase() + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
-                .andExpect(jsonPath("$.data.displayName").value("건망증"))
-                .andExpect(jsonPath("$.data.canReset").value(true));
+                .andExpect(jsonPath("$.data.loginId").value("forgetful"))
+                .andExpect(jsonPath("$.data.displayName").value("건망증"));
 
         MvcResult resetResult = mockMvc.perform(post("/api/v1/auth/recover/reset")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -341,13 +341,16 @@ public class AuthService {
     }
 
     // 계정 찾기 1단계: 복구 코드가 있으면 코드로, 없으면 본인 정보(이름·이메일·전화번호)로 계정을 확인.
-    // 어느 쪽이든 맞으면 가린 아이디와 이름을 알려 주고 바로 비밀번호를 바꿀 수 있음.
+    // 어느 쪽이든 맞으면 아이디와 이름을 알려 주고(아이디 찾기), 같은 정보로 비밀번호도 바꿀 수 있음.
+    // 같은 정보로 비밀번호까지 바꿀 수 있으므로 일반 아이디는 전체를 보여 줘도 새로 드러나는 위험은 없음.
     @Transactional(readOnly = true)
     public SignupResponse.RecoverLookup recoverLookup(RecoverRequest.Lookup request) {
         UserAccount userAccount = recoverAccount(request.displayName(), request.email(), request.phoneNumber(),
                 request.recoveryCode());
-        return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName(),
-                true);
+        // 이메일 형식 아이디(예전 계정)는 이메일과 같은 규칙으로 가리고, 일반 아이디는 그대로 보여 줌.
+        String loginId = userAccount.getLoginId();
+        String shownLoginId = loginId.contains("@") ? PersonalInfoMasker.maskEmail(loginId) : loginId;
+        return new SignupResponse.RecoverLookup(shownLoginId, userAccount.getDisplayName());
     }
 
     // 계정 찾기 2단계: 1단계와 같은 정보로 다시 확인한 뒤 비밀번호를 바꾸고 기존 로그인을 모두 끊음.
@@ -410,14 +413,6 @@ public class AuthService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
-    }
-
-    // 앞 2글자와 뒤 2글자만 남기고 가림. 짧은 아이디는 앞 1글자만.
-    static String maskLoginId(String loginId) {
-        if (loginId.length() <= 4) {
-            return loginId.charAt(0) + "*".repeat(loginId.length() - 1);
-        }
-        return loginId.substring(0, 2) + "*".repeat(loginId.length() - 4) + loginId.substring(loginId.length() - 2);
     }
 
     private Company demoCompany() {

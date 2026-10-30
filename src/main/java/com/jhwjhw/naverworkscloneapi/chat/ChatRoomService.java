@@ -136,12 +136,24 @@ public class ChatRoomService {
         return room(room, requesterId);
     }
 
-    // 주소록 "그룹" 탭: 내 회사의 그룹 채팅방 전체(참여 여부 무관). 인원수·마지막 대화 시각은 방 수와 무관하게 쿼리 한 번씩.
+    // 주소록 "그룹" 탭: 내 회사의 그룹 채팅방 전체(참여 여부 무관) + 내가 참여 중인 다른 회사 그룹 채팅방.
+    // 그룹방은 만든 사람의 회사에 속하므로, 다른 회사 사람이 만든 방에 초대받으면 회사 기준만으로는 빠짐.
+    // 인원수·마지막 대화 시각은 방 수와 무관하게 쿼리 한 번씩.
     @Transactional(readOnly = true)
     public List<ChatRoomResponse.GroupSummary> groupRooms(Long requesterId) {
         Membership requester = activeMembership(requesterId);
-        List<ChatRoom> rooms = roomRepository.findByCompanyIdAndRoomTypeAndEndedAtIsNullOrderByCreatedAtDesc(
-                requester.getCompany().getId(), ChatRoomType.GROUP);
+        Map<Long, ChatRoom> roomById = new LinkedHashMap<>();
+        roomRepository.findByCompanyIdAndRoomTypeAndEndedAtIsNullOrderByCreatedAtDesc(
+                requester.getCompany().getId(), ChatRoomType.GROUP)
+                .forEach(room -> roomById.put(room.getId(), room));
+        memberRepository.findByMembershipIdAndLeftAtIsNull(requesterId).stream()
+                .map(ChatRoomMember::getChatRoom)
+                .filter(room -> room.getRoomType() == ChatRoomType.GROUP && room.getEndedAt() == null)
+                .forEach(room -> roomById.putIfAbsent(room.getId(), room));
+        // 최근에 만든 방이 앞.
+        List<ChatRoom> rooms = roomById.values().stream()
+                .sorted(Comparator.comparing(ChatRoom::getCreatedAt, Comparator.reverseOrder()))
+                .toList();
         if (rooms.isEmpty()) {
             return List.of();
         }
@@ -163,14 +175,18 @@ public class ChatRoomService {
         }).toList();
     }
 
-    // 주소록 그룹 상세: 같은 회사 구성원이면 참여하지 않은 방의 구성원도 볼 수 있음. 프로필·즐겨찾기 모두 쿼리 한 번씩.
+    // 주소록 그룹 상세: 같은 회사 구성원이면 참여하지 않은 방의 구성원도 볼 수 있고,
+    // 다른 회사 방은 내가 참여 중일 때만 볼 수 있음. 프로필·즐겨찾기 모두 쿼리 한 번씩.
     @Transactional(readOnly = true)
     public List<ChatRoomResponse.GroupMember> groupMembers(Long requesterId, Long roomId) {
         Membership requester = activeMembership(requesterId);
         ChatRoom room = roomRepository.findById(roomId)
                 .filter(candidate -> candidate.getRoomType() == ChatRoomType.GROUP && candidate.getEndedAt() == null)
                 .orElseThrow(() -> new ChatException("CHAT_ROOM_NOT_FOUND", "채팅방을 찾을 수 없습니다."));
-        if (!room.getCompany().getId().equals(requester.getCompany().getId())) {
+        boolean sameCompany = room.getCompany().getId().equals(requester.getCompany().getId());
+        boolean joined = memberRepository.findByChatRoomIdAndMembershipId(roomId, requesterId)
+                .filter(ChatRoomMember::isActive).isPresent();
+        if (!sameCompany && !joined) {
             throw new ChatException("CHAT_ROOM_ACCESS_DENIED", "다른 회사의 그룹은 볼 수 없습니다.");
         }
         List<ChatRoomMember> members = memberRepository.findActiveWithProfileByChatRoomId(roomId);

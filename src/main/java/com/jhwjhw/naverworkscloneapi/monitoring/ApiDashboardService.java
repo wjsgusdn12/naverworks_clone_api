@@ -22,7 +22,7 @@ import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-// 집계판의 5분 칸과 DB의 1시간 요약을 읽어 대시보드 숫자로 정리.
+// DB의 5분 칸과 1시간 요약을 읽어 대시보드 숫자로 정리(둘 다 DB라 서버·Redis를 재시작해도 남음).
 // 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
 // - 이번 시간: 14:00~14:59 (5분 점 12개)
 // - 오늘: 00:00~23:59 (5분 점 288개)
@@ -43,17 +43,19 @@ public class ApiDashboardService {
     private final ServerStatusReporter reporter;
     private final DataSource dataSource;
     private final ApiMetricHourlyRepository hourlyRepository;
+    private final ApiMetricBucketRepository bucketRepository;
     // 하루·한 주를 자르는 기준 시간대
     private final ZoneId zone;
 
     public ApiDashboardService(ApiMetricsRecorder recorder, ApiMetricsStore store, ServerStatusReporter reporter,
             DataSource dataSource, ApiMetricHourlyRepository hourlyRepository,
-            @Value("${app.monitoring.zone:Asia/Seoul}") String zone) {
+            ApiMetricBucketRepository bucketRepository, @Value("${app.monitoring.zone:Asia/Seoul}") String zone) {
         this.recorder = recorder;
         this.store = store;
         this.reporter = reporter;
         this.dataSource = dataSource;
         this.hourlyRepository = hourlyRepository;
+        this.bucketRepository = bucketRepository;
         this.zone = ZoneId.of(zone);
     }
 
@@ -96,10 +98,10 @@ public class ApiDashboardService {
             monthBins.add(hour);
         }
 
-        // 오늘 0시부터 지금까지의 5분 칸(집계판은 25시간치를 갖고 있어 하루를 모두 덮음)
+        // 오늘 0시부터 지금까지의 5분 칸(DB가 25시간치를 돌려 쓰며 보관해 하루를 모두 덮음)
         long dayFirstBucket = ApiMetricsRecorder.bucketOf(dayStart);
         long hourFirstBucket = ApiMetricsRecorder.bucketOf(hourStart);
-        Map<Long, MetricsBucket> buckets = store.read(dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
+        Map<Long, MetricsBucket> buckets = bucketRepository.read(dayFirstBucket, ApiMetricsRecorder.bucketOf(now));
 
         // 이번 시간: 5분 칸 12개 그대로. API별 5분 [호출 수, 걸린 시간 합]도 모음(순위 옆 작은 추이선용).
         MetricsBucket thisHour = new MetricsBucket();

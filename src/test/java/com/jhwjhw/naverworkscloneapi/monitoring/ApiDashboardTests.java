@@ -42,6 +42,7 @@ class ApiDashboardTests {
     @Autowired private UserAccountRepository accounts;
     @Autowired private MembershipRepository memberships;
     @Autowired private ApiMetricHourlyRepository hourlyRepository;
+    @Autowired private ApiMetricBucketRepository bucketRepository;
 
     private Membership admin;
     private Membership user;
@@ -145,28 +146,56 @@ class ApiDashboardTests {
         assertThat(dashboard.servers()).anyMatch(ApiDashboardResponse.Server::current);
     }
 
-    // 핵심: 서버 1·2가 각자 모은 기록을 같은 집계판에 보내면 어느 쪽에서 읽어도 합계가 나옴.
+    // 핵심: 서버 1·2가 각자 모은 기록을 같은 DB에 보내면 어느 쪽에서 읽어도 합계가 나오고, 재시작해도 남음.
+    // (실제 요청이 쓰는 지금 칸과 겹치지 않도록 먼 미래 시각을 사용)
     @Test
-    void twoServersWritingToOneStoreAreSummed() {
-        InMemoryApiMetricsStore sharedStore = new InMemoryApiMetricsStore();
-        ApiMetricsRecorder server1 = new ApiMetricsRecorder(sharedStore, mock(ApiMetricHourlyRepository.class));
-        ApiMetricsRecorder server2 = new ApiMetricsRecorder(sharedStore, mock(ApiMetricHourlyRepository.class));
-        Instant now = Instant.now();
-        for (int i = 0; i < 3; i++) server1.record("GET /api/v1/chatRoom", 200, 40, now);
-        server2.record("GET /api/v1/chatRoom", 200, 60, now);
-        server2.record("POST /api/v1/chatRoom/message/create", 500, 120, now);
+    void twoServersWritingToOneDatabaseAreSummed() {
+        ApiMetricsRecorder server1 = new ApiMetricsRecorder(bucketRepository, mock(ApiMetricHourlyRepository.class));
+        ApiMetricsRecorder server2 = new ApiMetricsRecorder(bucketRepository, mock(ApiMetricHourlyRepository.class));
+        Instant at = Instant.parse("2099-01-01T10:02:00Z");
+        for (int i = 0; i < 3; i++) server1.record("GET /api/v1/chatRoom", 200, 40, at);
+        server2.record("GET /api/v1/chatRoom", 200, 60, at);
+        server2.record("POST /api/v1/chatRoom/message/create", 500, 120, at);
         server1.flush();
-        server2.flush();
+        // 서버 2는 꺼지면서 남은 기록을 저장(재시작 직전 기록도 사라지지 않음).
+        server2.flushOnShutdown();
 
-        long bucket = ApiMetricsRecorder.bucketOf(now);
-        MetricsBucket total = sharedStore.read(bucket, bucket).get(bucket);
+        long bucket = ApiMetricsRecorder.bucketOf(at);
+        MetricsBucket total = bucketRepository.read(bucket, bucket).get(bucket);
         assertThat(total.getCount()).isEqualTo(5);
         assertThat(total.getServerErrors()).isEqualTo(1);
+        assertThat(total.p95Ms()).isEqualTo(200);
         assertThat(total.getEndpoints().get("GET /api/v1/chatRoom").getCount()).isEqualTo(4);
         assertThat(total.getEndpoints().get("GET /api/v1/chatRoom").getDurationSumMs()).isEqualTo(3 * 40 + 60);
         // 보낸 뒤에는 각 서버의 상자가 비어 같은 기록이 두 번 더해지지 않음.
         server1.flush();
-        assertThat(sharedStore.read(bucket, bucket).get(bucket).getCount()).isEqualTo(5);
+        assertThat(bucketRepository.read(bucket, bucket).get(bucket).getCount()).isEqualTo(5);
+    }
+
+    // 5분 칸 자리는 300개를 돌려 씀: 25시간 뒤 같은 자리에 오면 옛 칸을 지우지 않고 새 값으로 덮어씀.
+    @Test
+    void bucketSlotIsReusedAfter25Hours() {
+        long old = ApiMetricsRecorder.bucketOf(Instant.parse("2099-02-01T00:00:00Z"));
+        long reused = old + ApiMetricBucketRepository.SLOTS;
+        MetricsBucket oldData = new MetricsBucket();
+        oldData.record("GET /old", 200, 40);
+        oldData.record("GET /old", 200, 40);
+        bucketRepository.addBucket(old, oldData);
+        MetricsBucket newData = new MetricsBucket();
+        newData.record("GET /new", 500, 3000);
+        bucketRepository.addBucket(reused, newData);
+
+        // 새 칸은 옛 값이 섞이지 않고(더하기가 아니라 덮어쓰기) 새 기록만.
+        MetricsBucket saved = bucketRepository.read(reused, reused).get(reused);
+        assertThat(saved.getCount()).isEqualTo(1);
+        assertThat(saved.getServerErrors()).isEqualTo(1);
+        assertThat(saved.getEndpoints()).containsOnlyKeys("GET /new");
+        // 옛 칸의 합계 행은 새 칸으로 바뀌어 옛 칸 합계는 0(그 뒤 안 불린 API 행은 남지만 25시간 지난 범위라
+        // 대시보드가 읽지 않고, 행 수도 300자리 × API 수를 넘지 않음).
+        assertThat(bucketRepository.read(old, old).getOrDefault(old, new MetricsBucket()).getCount()).isZero();
+        // 늦게 도착한 옛 칸 기록이 새 칸을 덮어쓰지 않음.
+        bucketRepository.addBucket(old, oldData);
+        assertThat(bucketRepository.read(reused, reused).get(reused).getCount()).isEqualTo(1);
     }
 
     // p95: 100건 중 95번째로 빠른 요청이 들어간 구간의 위쪽 경계.

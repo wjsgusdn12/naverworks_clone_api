@@ -5,10 +5,11 @@ import java.util.List;
 
 // 홈 화면 API 대시보드 응답.
 // mode: SHARED(Redis로 모든 서버 합산) / LOCAL(이 서버만, 로컬 개발)
-// trend: 최근 24시간 1시간 단위 24점, recentTrend: 최근 1시간 5분 단위 12점
+// trend: 최근 24시간 1시간 단위 24점, recentTrend: 최근 1시간 5분 단위 12점,
+// weekTrend: 최근 7일 1시간 단위 168점(DB의 1시간 요약)
 public record ApiDashboardResponse(Instant generatedAt, String mode, String database, List<Server> servers,
-        Summary lastHour, Summary lastDay, List<TrendPoint> trend, List<TrendPoint> recentTrend,
-        List<EndpointStat> topEndpoints, List<EndpointStat> slowEndpoints) {
+        Summary lastHour, Summary lastDay, Summary lastWeek, List<TrendPoint> trend, List<TrendPoint> recentTrend,
+        List<TrendPoint> weekTrend, List<EndpointStat> topEndpoints, List<EndpointStat> slowEndpoints) {
 
     // 기간 합계. errorRate는 5xx(서버 오류) 비율(%), p95Ms가 -1이면 5초 초과.
     public record Summary(long requests, long clientErrors, long serverErrors, double errorRate, long avgMs,

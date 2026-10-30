@@ -22,17 +22,34 @@ public class ApiDashboardService {
     static final int SLOW_MIN_REQUESTS = 5;
     private static final long BUCKETS_PER_HOUR = 3600 / ApiMetricsRecorder.BUCKET_SECONDS;
     private static final long BUCKETS_PER_DAY = BUCKETS_PER_HOUR * 24;
+    // 일주일 그래프의 1시간 점 개수
+    static final int WEEK_HOURS = 24 * 7;
 
     private final ApiMetricsRecorder recorder;
     private final ApiMetricsStore store;
     private final ServerStatusReporter reporter;
     private final DataSource dataSource;
+    private final ApiMetricHourlyRepository hourlyRepository;
 
     public ApiDashboardResponse dashboard() {
         Instant now = Instant.now();
-        // 이 서버가 아직 보내지 않은 최근 기록과 상태를 먼저 반영.
+        // 이 서버가 아직 보내지 않은 최근 기록과 상태를 먼저 반영(다른 서버의 1시간 요약은 최대 1분 늦게 반영).
         recorder.flush();
+        recorder.flushHourly();
         reporter.report();
+
+        // 일주일: DB의 1시간 요약 168칸(지금 시간 포함)
+        Instant thisHour = ApiMetricsRecorder.hourOf(now);
+        Instant weekFrom = thisHour.minus(Duration.ofHours(WEEK_HOURS - 1));
+        Map<Instant, MetricsBucket> weekHours = hourlyRepository.readTotals(weekFrom);
+        MetricsBucket lastWeek = new MetricsBucket();
+        List<ApiDashboardResponse.TrendPoint> weekTrend = new ArrayList<>();
+        for (int hour = 0; hour < WEEK_HOURS; hour++) {
+            Instant start = weekFrom.plus(Duration.ofHours(hour));
+            MetricsBucket data = weekHours.getOrDefault(start, new MetricsBucket());
+            lastWeek.add(data);
+            weekTrend.add(point(start, data));
+        }
 
         long current = ApiMetricsRecorder.bucketOf(now);
         long from = current - BUCKETS_PER_DAY + 1;
@@ -98,14 +115,18 @@ public class ApiDashboardService {
                 .toList();
 
         return new ApiDashboardResponse(now, store.mode(), databaseStatus(), servers, summary(lastHour),
-                summary(lastDay), trend, recentTrend, top, slow);
+                summary(lastDay), summary(lastWeek), trend, recentTrend, weekTrend, top, slow);
     }
 
     // startBucket부터 시작하는 구간 하나를 추이 한 점으로.
     private static ApiDashboardResponse.TrendPoint point(long startBucket, MetricsBucket data) {
-        return new ApiDashboardResponse.TrendPoint(Instant.ofEpochSecond(startBucket * ApiMetricsRecorder.BUCKET_SECONDS),
-                data.getCount(), data.getClientErrors() + data.getServerErrors(),
-                average(data.getDurationSumMs(), data.getCount()), data.p95Ms());
+        return point(Instant.ofEpochSecond(startBucket * ApiMetricsRecorder.BUCKET_SECONDS), data);
+    }
+
+    private static ApiDashboardResponse.TrendPoint point(Instant start, MetricsBucket data) {
+        return new ApiDashboardResponse.TrendPoint(start, data.getCount(),
+                data.getClientErrors() + data.getServerErrors(), average(data.getDurationSumMs(), data.getCount()),
+                data.p95Ms());
     }
 
     private static ApiDashboardResponse.Summary summary(MetricsBucket bucket) {

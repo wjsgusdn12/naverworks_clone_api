@@ -1,6 +1,7 @@
 package com.jhwjhw.naverworkscloneapi.monitoring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -40,6 +41,7 @@ class ApiDashboardTests {
     @Autowired private CompanyRepository companies;
     @Autowired private UserAccountRepository accounts;
     @Autowired private MembershipRepository memberships;
+    @Autowired private ApiMetricHourlyRepository hourlyRepository;
 
     private Membership admin;
     private Membership user;
@@ -95,6 +97,9 @@ class ApiDashboardTests {
         assertThat(dashboard.recentTrend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
                 .isEqualTo(dashboard.lastHour().requests());
         assertThat(dashboard.topEndpoints().getFirst().hourlyRequests()).hasSize(24);
+        // 일주일 그래프: DB 1시간 요약 168칸, 방금 요청도 1시간 요약에 들어감.
+        assertThat(dashboard.weekTrend()).hasSize(ApiDashboardService.WEEK_HOURS);
+        assertThat(dashboard.lastWeek().requests()).isGreaterThanOrEqualTo(dashboard.lastHour().requests());
         assertThat(dashboard.servers()).anyMatch(ApiDashboardResponse.Server::current);
     }
 
@@ -102,8 +107,8 @@ class ApiDashboardTests {
     @Test
     void twoServersWritingToOneStoreAreSummed() {
         InMemoryApiMetricsStore sharedStore = new InMemoryApiMetricsStore();
-        ApiMetricsRecorder server1 = new ApiMetricsRecorder(sharedStore);
-        ApiMetricsRecorder server2 = new ApiMetricsRecorder(sharedStore);
+        ApiMetricsRecorder server1 = new ApiMetricsRecorder(sharedStore, mock(ApiMetricHourlyRepository.class));
+        ApiMetricsRecorder server2 = new ApiMetricsRecorder(sharedStore, mock(ApiMetricHourlyRepository.class));
         Instant now = Instant.now();
         for (int i = 0; i < 3; i++) server1.record("GET /api/v1/chatRoom", 200, 40, now);
         server2.record("GET /api/v1/chatRoom", 200, 60, now);
@@ -139,5 +144,26 @@ class ApiDashboardTests {
         verySlow.record("GET /a", 200, 9000);
         assertThat(verySlow.p95Ms()).isEqualTo(-1);
         assertThat(new MetricsBucket().p95Ms()).isZero();
+    }
+
+    // 서버 1·2가 같은 시간 요약 행에 각각 더해도(첫 행 생성 + 이후 더하기) DB에 합계가 남음.
+    @Test
+    void hourlySummaryIsAddedNotOverwritten() {
+        Instant hour = Instant.parse("2020-01-01T10:00:00Z");
+        MetricsBucket fromServer1 = new MetricsBucket();
+        fromServer1.record("GET /a", 200, 40);
+        fromServer1.record("GET /a", 500, 3000);
+        MetricsBucket fromServer2 = new MetricsBucket();
+        fromServer2.record("GET /b", 404, 80);
+        hourlyRepository.addHour(hour, fromServer1);
+        hourlyRepository.addHour(hour, fromServer2);
+
+        MetricsBucket saved = hourlyRepository.readTotals(hour).get(hour);
+        assertThat(saved.getCount()).isEqualTo(3);
+        assertThat(saved.getServerErrors()).isEqualTo(1);
+        assertThat(saved.getClientErrors()).isEqualTo(1);
+        assertThat(saved.getDurationSumMs()).isEqualTo(40 + 3000 + 80);
+        assertThat(saved.p95Ms()).isEqualTo(5000);
+        assertThat(ApiMetricsRecorder.hourOf(Instant.parse("2020-01-01T10:42:13Z"))).isEqualTo(hour);
     }
 }

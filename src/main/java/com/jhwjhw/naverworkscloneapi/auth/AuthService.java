@@ -34,6 +34,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.jhwjhw.naverworkscloneapi.common.privacy.PersonalInfoMasker;
 
 @Service
 // final 의존성 생성자는 Lombok이 자동 생성.
@@ -334,54 +335,76 @@ public class AuthService {
         return new SignupResponse.InviteCode(company.getName(), company.getInviteCode());
     }
 
-    // 계정 찾기 1단계: 복구 코드가 있으면 코드로, 없으면 아이디(또는 이메일)로 계정을 확인.
-    // 아이디로만 찾았을 때는 가린 아이디와 이름만 알려 주고(아이디 찾기), 비밀번호 재설정은 복구 코드가 있어야 함.
+    // 계정 찾기 1단계: 복구 코드가 있으면 코드로, 없으면 본인 정보(이름·이메일·전화번호)로 계정을 확인.
+    // 어느 쪽이든 맞으면 가린 아이디와 이름을 알려 주고 바로 비밀번호를 바꿀 수 있음.
     @Transactional(readOnly = true)
-    public SignupResponse.RecoverLookup recoverLookup(String loginId, String recoveryCode) {
-        if (recoveryCode != null && !recoveryCode.isBlank()) {
-            UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
-            return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()),
-                    userAccount.getDisplayName(), true);
-        }
-        if (loginId == null || loginId.isBlank()) {
-            throw new AuthException("AUTH_RECOVER_INPUT_REQUIRED", "아이디(또는 이메일)나 복구 코드를 입력해 주세요.");
-        }
-        String identifier = normalizeEmail(loginId);
-        UserAccount userAccount = userAccountRepository.findByLoginId(identifier)
-                .or(() -> userAccountRepository.findByEmail(identifier))
-                .filter(UserAccount::isEnabled)
-                .orElseThrow(() -> new AuthException("AUTH_ACCOUNT_NOT_FOUND", "해당 아이디 또는 이메일로 가입한 계정이 없습니다."));
+    public SignupResponse.RecoverLookup recoverLookup(RecoverRequest.Lookup request) {
+        UserAccount userAccount = recoverAccount(request.displayName(), request.email(), request.phoneNumber(),
+                request.recoveryCode());
         return new SignupResponse.RecoverLookup(maskLoginId(userAccount.getLoginId()), userAccount.getDisplayName(),
-                false);
+                true);
     }
 
-    // 계정 찾기 2단계: 비밀번호를 바꾸고 기존 로그인을 모두 끊은 뒤, 쓴 복구 코드는 버리고 새 코드를 발급.
+    // 계정 찾기 2단계: 1단계와 같은 정보로 다시 확인한 뒤 비밀번호를 바꾸고 기존 로그인을 모두 끊음.
+    // 쓴 복구 코드는 버리고 새 코드를 발급.
     @Transactional
-    public SignupResponse.RecoveryCode recoverReset(String loginId, String recoveryCode, String newPassword) {
-        UserAccount userAccount = accountByRecoveryCode(loginId, recoveryCode);
-        userAccount.changePassword(passwordEncoder.encode(newPassword));
+    public SignupResponse.RecoveryCode recoverReset(RecoverRequest.Reset request) {
+        boolean byRecoveryCode = request.recoveryCode() != null && !request.recoveryCode().isBlank();
+        UserAccount userAccount = recoverAccount(request.displayName(), request.email(), request.phoneNumber(),
+                request.recoveryCode());
+        userAccount.changePassword(passwordEncoder.encode(request.newPassword()));
         String nextCode = createRecoveryCode();
         userAccount.updateRecoveryCodeHash(hashToken(nextCode));
         membershipRepository.findByUserAccountId(userAccount.getId()).ifPresent(membership -> {
             Instant now = Instant.now();
             refreshTokenRepository.findByMembershipIdAndRevokedAtIsNull(membership.getId())
                     .forEach(token -> token.revoke(now));
+            String method = byRecoveryCode ? "복구 코드" : "본인 정보 확인";
             notificationService.create(membership.getId(), NotificationCategory.SYSTEM, "비밀번호 변경 알림",
-                    "복구 코드로 비밀번호가 변경되었습니다. 본인이 아니라면 다시 변경해 주세요.", null);
-            log.info("Password reset by recovery code. membershipId={}", membership.getId());
+                    method + "으로 비밀번호가 변경되었습니다. 본인이 아니라면 다시 변경해 주세요.", null);
+            log.info("Password reset. membershipId={}, method={}", membership.getId(),
+                    byRecoveryCode ? "RECOVERY_CODE" : "IDENTITY");
         });
         return new SignupResponse.RecoveryCode(nextCode);
     }
 
-    // 복구 코드 해시로 계정을 찾음. 아이디(또는 이메일)를 함께 보냈다면 그 계정과 같아야 통과. 어느 쪽이 틀렸는지는 알려 주지 않음.
-    private UserAccount accountByRecoveryCode(String loginId, String recoveryCode) {
-        String normalizedCode = recoveryCode == null ? "" : recoveryCode.trim().toUpperCase(Locale.ROOT);
-        String identifier = loginId == null || loginId.isBlank() ? null : normalizeEmail(loginId);
+    // 복구 코드가 있으면 코드로, 없으면 본인 정보 세 가지로 계정을 찾음.
+    private UserAccount recoverAccount(String displayName, String email, String phoneNumber, String recoveryCode) {
+        if (recoveryCode != null && !recoveryCode.isBlank()) {
+            return accountByRecoveryCode(recoveryCode);
+        }
+        if (isBlank(displayName) || isBlank(email) || isBlank(phoneNumber)) {
+            throw new AuthException("AUTH_RECOVER_INPUT_REQUIRED", "이름·이메일·전화번호를 모두 입력하거나 복구 코드를 입력해 주세요.");
+        }
+        return accountByIdentity(displayName, email, phoneNumber);
+    }
+
+    // 복구 코드 해시로 계정을 찾음.
+    private UserAccount accountByRecoveryCode(String recoveryCode) {
+        String normalizedCode = recoveryCode.trim().toUpperCase(Locale.ROOT);
         return userAccountRepository.findByRecoveryCodeHash(hashToken(normalizedCode))
                 .filter(UserAccount::isEnabled)
-                .filter(account -> identifier == null || identifier.equals(account.getLoginId())
-                        || identifier.equals(account.getEmail()))
-                .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "아이디 또는 복구 코드가 올바르지 않습니다."));
+                .orElseThrow(() -> new AuthException("AUTH_RECOVERY_CODE_INVALID", "복구 코드가 올바르지 않습니다."));
+    }
+
+    // 이메일로 계정을 찾고 이름·전화번호까지 모두 같아야 통과. 전화번호는 하이픈·공백을 빼고 숫자만 비교.
+    // 어느 항목이 틀렸는지는 알려 주지 않아 가입 여부를 떠보기 어렵게 함.
+    private UserAccount accountByIdentity(String displayName, String email, String phoneNumber) {
+        String name = displayName.trim();
+        String phone = PersonalInfoMasker.phoneDigits(phoneNumber);
+        return userAccountRepository.findByEmail(normalizeEmail(email))
+                .filter(UserAccount::isEnabled)
+                .filter(account -> name.equals(account.getDisplayName()))
+                .filter(account -> membershipRepository.findByUserAccountId(account.getId())
+                        .map(membership -> PersonalInfoMasker.phoneDigits(membership.getPhoneNumber()))
+                        .filter(saved -> !saved.isEmpty() && saved.equals(phone))
+                        .isPresent())
+                .orElseThrow(() -> new AuthException("AUTH_IDENTITY_MISMATCH",
+                        "입력한 이름·이메일·전화번호와 일치하는 계정이 없습니다."));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     // 앞 2글자와 뒤 2글자만 남기고 가림. 짧은 아이디는 앞 1글자만.
@@ -512,7 +535,8 @@ public class AuthService {
                 membership.getCompany().getName(),
                 userAccount.getId(),
                 userAccount.getLoginId(),
-                userAccount.getEmail(),
+                // 화면에는 가린 이메일만 내보냄.
+                PersonalInfoMasker.maskEmail(userAccount.getEmail()),
                 userAccount.getDisplayName(),
                 membership.getRole().name());
     }

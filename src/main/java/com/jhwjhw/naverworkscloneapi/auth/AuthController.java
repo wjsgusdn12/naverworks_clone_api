@@ -58,19 +58,18 @@ public class AuthController {
                                                 new SignupResponse.Created(session.response(), result.recoveryCode())));
         }
 
-        // 계정 찾기 1단계: 아이디(또는 이메일) 아니면 복구 코드로 계정 확인(로그인 전)
+        // 계정 찾기 1단계: 본인 정보(이름·이메일·전화번호) 아니면 복구 코드로 계정 확인(로그인 전)
         @PostMapping("/recover/lookup")
         public ApiResponse<SignupResponse.RecoverLookup> recoverLookup(@Valid @RequestBody RecoverRequest.Lookup request) {
                 return ApiResponse.success("AUTH_RECOVER_LOOKUP_SUCCESS", "계정을 확인했습니다.",
-                                authService.recoverLookup(request.loginId(), request.recoveryCode()));
+                                authService.recoverLookup(request));
         }
 
-        // 계정 찾기 2단계: 복구 코드로 비밀번호 재설정(로그인 전). 새 복구 코드를 돌려줌.
+        // 계정 찾기 2단계: 본인 정보 또는 복구 코드로 다시 확인 후 비밀번호 재설정(로그인 전). 새 복구 코드를 돌려줌.
         @PostMapping("/recover/reset")
         public ApiResponse<SignupResponse.RecoveryCode> recoverReset(@Valid @RequestBody RecoverRequest.Reset request) {
                 return ApiResponse.success("AUTH_RECOVER_RESET_SUCCESS", "비밀번호를 변경했습니다.",
-                                authService.recoverReset(request.loginId(), request.recoveryCode(),
-                                                request.newPassword()));
+                                authService.recoverReset(request));
         }
 
         // 회사 옮기기. 회사 ID가 바뀌므로 새 토큰 쌍을 발급하고 리프레시 쿠키도 교체.

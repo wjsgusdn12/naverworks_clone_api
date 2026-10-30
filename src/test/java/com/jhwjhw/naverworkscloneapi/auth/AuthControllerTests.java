@@ -138,7 +138,7 @@ class AuthControllerTests {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("AUTH_MEMBER_FOUND"))
-                .andExpect(jsonPath("$.data.email").value("admin@example.com"))
+                .andExpect(jsonPath("$.data.email").value("admi*@example.com"))
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
     }
 
@@ -356,6 +356,52 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.code").value("AUTH_LOGIN_ID_TAKEN"));
     }
 
+    // 계정 찾기: 이름·이메일·전화번호가 모두 맞으면 비밀번호를 바꿀 수 있고, 하나라도 틀리면 거부.
+    // 가입 응답의 내 이메일은 가린 값으로 내려옴.
+    @Test
+    void identityMatchResetsPasswordAndEmailIsMasked() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"identity01\",\"password\":\"old-pass-123\",\"displayName\":\"본인확인\","
+                                + "\"email\":\"testuser9@example.com\",\"phoneNumber\":\"010-1234-5678\","
+                                + "\"joinType\":\"DEMO\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.session.member.email").value("test*****@example.com"));
+
+        // 전화번호가 틀리면 어느 항목이 틀렸는지 알려 주지 않고 거부.
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"본인확인\",\"email\":\"testuser9@example.com\","
+                                + "\"phoneNumber\":\"010-1234-0000\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_IDENTITY_MISMATCH"));
+        // 세 항목 중 하나가 비면 입력 요구.
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"본인확인\",\"email\":\"testuser9@example.com\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_RECOVER_INPUT_REQUIRED"));
+
+        // 하이픈 없이 입력하고 이메일 대소문자가 달라도 같은 정보로 인정.
+        String identity = "\"displayName\":\"본인확인\",\"email\":\"TestUser9@example.com\","
+                + "\"phoneNumber\":\"01012345678\"";
+        mockMvc.perform(post("/api/v1/auth/recover/lookup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" + identity + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.maskedLoginId").value("id******01"))
+                .andExpect(jsonPath("$.data.canReset").value(true));
+        mockMvc.perform(post("/api/v1/auth/recover/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" + identity + ",\"newPassword\":\"new-pass-456\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"identity01\",\"password\":\"new-pass-456\",\"rememberMe\":false}"))
+                .andExpect(status().isOk());
+    }
+
     // 계정 찾기: 복구 코드로 아이디를 확인하고 비밀번호를 바꾸면, 새 비밀번호로만 로그인되고 쓴 코드는 무효가 됨.
     @Test
     void recoveryCodeLooksUpAccountAndResetsPassword() throws Exception {
@@ -368,25 +414,12 @@ class AuthControllerTests {
         String recoveryCode = objectMapper.readTree(signupResult.getResponse().getContentAsString())
                 .path("data").path("recoveryCode").asText();
 
-        // 아이디가 틀리면 코드가 맞아도 거부.
+        // 아무것도 없으면 입력 요구.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"someone-else\",\"recoveryCode\":\"" + recoveryCode + "\"}"))
+                        .content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
-
-        // 아이디만으로는 가린 아이디와 이름만 확인되고 비밀번호 재설정은 불가.
-        mockMvc.perform(post("/api/v1/auth/recover/lookup")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"Forgetful\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.maskedLoginId").value("fo*****ul"))
-                .andExpect(jsonPath("$.data.canReset").value(false));
-        mockMvc.perform(post("/api/v1/auth/recover/lookup")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"nobody-here\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("AUTH_ACCOUNT_NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value("AUTH_RECOVER_INPUT_REQUIRED"));
 
         // 복구 코드만으로 계정이 확인되고 재설정까지 가능.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
@@ -409,7 +442,7 @@ class AuthControllerTests {
         // 쓴 코드는 더 이상 통하지 않음.
         mockMvc.perform(post("/api/v1/auth/recover/lookup")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"forgetful\",\"recoveryCode\":\"" + recoveryCode + "\"}"))
+                        .content("{\"recoveryCode\":\"" + recoveryCode + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("AUTH_RECOVERY_CODE_INVALID"));
 

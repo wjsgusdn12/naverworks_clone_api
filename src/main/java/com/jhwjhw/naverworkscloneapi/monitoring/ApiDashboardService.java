@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
 // DB의 1분·5분 칸과 1시간 요약을 읽어 대시보드 숫자로 정리(모두 DB라 서버·Redis를 재시작해도 남음).
 // - 숫자 카드와 순위 합계: 시·일·주·월 모두 빠짐없는 1시간 요약 기준(서로 항상 맞아떨어짐).
 // - 그래프: 이번 시간 1분, 오늘 5분 칸. 잘게 쪼갠 기록이 없는 구간(예: 기능 추가 전)은
-//   큰 단위 기록(5분·1시간 합계)으로 채워 묶음 첫 칸에 점 하나로 표시.
+//   큰 단위 기록(5분·1시간 합계)을 그 구간의 칸마다 고르게 나눠 채우고 추정값(estimated)으로 표시.
 // 기간은 "지금부터 거꾸로"가 아니라 달력 기준으로 자름(한국 시간 기본).
 // - 이번 시간: 14:00~14:59 (1분 점 60개)
 // - 오늘: 00:00~23:59 (5분 점 288개)
@@ -190,7 +190,7 @@ public class ApiDashboardService {
     }
 
     // count개의 작은 칸으로 그래프를 만듦. perGroup개씩 묶은 구간에 작은 칸 기록이 하나도 없고
-    // 큰 칸(group) 기록이 있으면, 큰 칸 값을 묶음 첫 칸에 넣고(spanMinutes = groupMinutes) 나머지는 0으로 표시.
+    // 큰 칸(group) 기록이 있으면, 큰 칸 값을 그 구간 칸마다 고르게 나눠 채움(추정값, 나눈 칸을 더하면 원래 합계).
     private static FineSeries fineSeries(int count, int perGroup, int fineMinutes, int groupMinutes,
             IntFunction<Instant> startOf, IntFunction<MetricsBucket> fineAt, IntFunction<MetricsBucket> groupAt) {
         List<ApiDashboardResponse.TrendPoint> points = new ArrayList<>();
@@ -209,9 +209,13 @@ public class ApiDashboardService {
                 Instant start = startOf.apply(index);
                 bins.add(start);
                 if (useCoarse) {
-                    MetricsBucket data = index == first ? coarse : new MetricsBucket();
-                    points.add(point(start, data, index == first ? groupMinutes : 0));
-                    if (index == first) collect(series, coarse, index, count);
+                    MetricsBucket cell = splitBucket(coarse, last - first, index - first);
+                    // 나눈 칸은 응답 시간 구간도 따로 나눠 p95가 흔들리므로 그 구간 전체의 p95를 그대로 씀.
+                    points.add(new ApiDashboardResponse.TrendPoint(start, cell.getCount(),
+                            cell.getClientErrors() + cell.getServerErrors(),
+                            average(cell.getDurationSumMs(), cell.getCount()),
+                            cell.getCount() == 0 ? 0 : coarse.p95Ms(), fineMinutes, latencyOf(cell), true));
+                    collect(series, cell, index, count);
                     continue;
                 }
                 MetricsBucket data = fineAt.apply(index) == null ? new MetricsBucket() : fineAt.apply(index);
@@ -234,12 +238,58 @@ public class ApiDashboardService {
                 endpoints)) {
             int hour = (int) Duration.between(dayStart, row.hourStart()).toHours();
             if (!fine.fallbackGroups().contains(hour)) continue;
-            int index = hour * (int) BUCKETS_PER_HOUR;
+            int first = hour * (int) BUCKETS_PER_HOUR;
+            int parts = (int) BUCKETS_PER_HOUR;
             long[][] values = series.computeIfAbsent(row.endpoint(), key -> new long[2][size]);
-            values[0][index] += row.requests();
-            values[1][index] += row.durationSumMs();
+            // 그래프처럼 1시간 값을 5분 칸 12개에 고르게 나눔.
+            long before = 0;
+            for (int part = 0; part < parts; part++) {
+                long requests = share(row.requests(), parts, part);
+                values[0][first + part] += requests;
+                values[1][first + part] += proportional(row.durationSumMs(), before, requests, row.requests());
+                before += requests;
+            }
         }
         return series;
+    }
+
+    // total을 parts칸에 고르게 나눈 index번째 몫(나머지는 앞 칸부터 1씩). 몫을 모두 더하면 total.
+    private static long share(long total, int parts, int index) {
+        return total / parts + (index < total % parts ? 1 : 0);
+    }
+
+    // total을 비율(앞 칸까지 누적 before, 이 칸 weight, 전체 weightTotal)로 나눈 몫. 몫을 모두 더하면 total.
+    private static long proportional(long total, long before, long weight, long weightTotal) {
+        if (weightTotal == 0) return 0;
+        return Math.floorDiv(total * (before + weight), weightTotal) - Math.floorDiv(total * before, weightTotal);
+    }
+
+    // 큰 칸 하나를 parts칸으로 고르게 나눈 index번째 칸. 걸린 시간 합은 요청 수 비율대로 나눠 평균이 그대로 유지됨.
+    private static MetricsBucket splitBucket(MetricsBucket coarse, int parts, int index) {
+        MetricsBucket cell = new MetricsBucket();
+        long before = 0;
+        for (int part = 0; part < index; part++) before += share(coarse.getCount(), parts, part);
+        long count = share(coarse.getCount(), parts, index);
+        cell.addTotals(count, share(coarse.getClientErrors(), parts, index),
+                share(coarse.getServerErrors(), parts, index),
+                proportional(coarse.getDurationSumMs(), before, count, coarse.getCount()));
+        long[] latency = coarse.getLatencyCounts();
+        for (int bin = 0; bin < latency.length; bin++) cell.addLatency(bin, share(latency[bin], parts, index));
+        coarse.getEndpoints().forEach((endpoint, stats) -> {
+            long endpointBefore = 0;
+            for (int part = 0; part < index; part++) endpointBefore += share(stats.getCount(), parts, part);
+            long endpointCount = share(stats.getCount(), parts, index);
+            cell.endpoint(endpoint).add(endpointCount, share(stats.getClientErrors(), parts, index),
+                    share(stats.getServerErrors(), parts, index),
+                    proportional(stats.getDurationSumMs(), endpointBefore, endpointCount, stats.getCount()));
+        });
+        return cell;
+    }
+
+    private static List<Long> latencyOf(MetricsBucket data) {
+        List<Long> latency = new ArrayList<>();
+        for (long count : data.getLatencyCounts()) latency.add(count);
+        return latency;
     }
 
     // 한 칸(index)의 API별 [호출 수, 걸린 시간 합]을 series에 더함.
@@ -321,11 +371,9 @@ public class ApiDashboardService {
 
     // startBucket부터 시작하는 5분 구간 하나를 추이 한 점으로.
     private static ApiDashboardResponse.TrendPoint point(Instant start, MetricsBucket data, int spanMinutes) {
-        List<Long> latency = new ArrayList<>();
-        for (long count : data.getLatencyCounts()) latency.add(count);
         return new ApiDashboardResponse.TrendPoint(start, data.getCount(),
                 data.getClientErrors() + data.getServerErrors(), average(data.getDurationSumMs(), data.getCount()),
-                data.p95Ms(), spanMinutes, latency);
+                data.p95Ms(), spanMinutes, latencyOf(data), false);
     }
 
     private static ApiDashboardResponse.Summary summary(MetricsBucket bucket) {

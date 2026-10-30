@@ -224,14 +224,18 @@ class ApiDashboardTests {
         hourlyRepository.addHour(hour, past);
 
         ApiDashboardResponse dashboard = dashboardService.dashboard(ApiDashboardService.Range.DAY);
-        // 그 시간의 첫 5분 칸에 1시간 합계 점 하나(spanMinutes 60), 나머지 11칸은 묶음에 포함(0).
+        // 그 시간의 5분 칸 12개에 1시간 합계를 고르게 나눔(7건 → 앞 7칸에 1건씩), 모두 추정값 표시.
         int first = hourIndex * 12;
-        ApiDashboardResponse.TrendPoint point = dashboard.trend().get(first);
-        assertThat(point.startAt()).isEqualTo(hour);
-        assertThat(point.requests()).isEqualTo(7);
-        assertThat(point.spanMinutes()).isEqualTo(60);
-        assertThat(dashboard.trend().subList(first + 1, first + 12))
-                .allSatisfy(item -> assertThat(item.spanMinutes()).isZero());
+        java.util.List<ApiDashboardResponse.TrendPoint> cells = dashboard.trend().subList(first, first + 12);
+        assertThat(cells.getFirst().startAt()).isEqualTo(hour);
+        assertThat(cells).allSatisfy(item -> {
+            assertThat(item.estimated()).isTrue();
+            assertThat(item.spanMinutes()).isEqualTo(5);
+        });
+        assertThat(cells).extracting(ApiDashboardResponse.TrendPoint::requests)
+                .containsExactly(1L, 1L, 1L, 1L, 1L, 1L, 1L, 0L, 0L, 0L, 0L, 0L);
+        // 나눠도 평균 응답 시간은 그대로(40ms).
+        assertThat(cells.getFirst().avgMs()).isEqualTo(40);
         // 숫자 카드·그래프 합계가 1시간 요약과 맞고, 순위에도 그 시간의 API가 들어감.
         assertThat(dashboard.summary().requests()).isGreaterThanOrEqualTo(7);
         assertThat(dashboard.trend().stream().mapToLong(ApiDashboardResponse.TrendPoint::requests).sum())
@@ -239,7 +243,8 @@ class ApiDashboardTests {
         assertThat(dashboard.ranking().top()).anySatisfy(stat -> {
             assertThat(stat.endpoint()).isEqualTo("GET /api/v1/pastOnly");
             assertThat(stat.requests()).isEqualTo(7);
-            assertThat(stat.trendRequests().get(first)).isEqualTo(7);
+            assertThat(stat.trendRequests().subList(first, first + 12).stream().mapToLong(Long::longValue).sum())
+                    .isEqualTo(7);
         });
     }
 

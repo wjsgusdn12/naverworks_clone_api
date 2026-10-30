@@ -12,6 +12,9 @@ spring:
     locations: classpath:db/migration
 
 app:
+  storage:
+    # 테스트에서 올린 파일은 빌드 폴더에 저장(지워져도 무방).
+    root: target/test-uploads
   cors:
     allowed-origin: http://localhost:3000
   auth:

@@ -17,12 +17,20 @@ spring:
     enabled: true
     # PostgreSQL 전용 인덱스는 운영 DB에서만 적용하고 H2 단위 테스트에서는 제외.
     locations: classpath:db/migration,classpath:db/migration-postgresql
+  servlet:
+    multipart:
+      # 첨부 파일 하나 최대 20MB. 요청 전체는 다른 값(방 ID 등)을 위해 조금 여유를 둠.
+      max-file-size: 20MB
+      max-request-size: 21MB
 
 server:
   # 로컬·배포 환경 모두 기본 9090을 사용하고 필요하면 환경 변수로 덮어씀.
   port: ${SERVER_PORT:9090}
 
 app:
+  storage:
+    # 첨부 파일을 저장할 서버 디스크 폴더. 배포 때는 Docker 볼륨 경로로 덮어씀.
+    root: ${FILE_STORAGE_ROOT:./uploads}
   cors:
     # Next.js 개발 서버만 API와 쿠키를 교차 출처로 호출하도록 허용.
     allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}

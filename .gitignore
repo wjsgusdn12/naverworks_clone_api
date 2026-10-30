@@ -44,3 +44,6 @@ docs/PROJECT_CONTEXT.md
 docs/PROGRESS.md
 docs/FEATURE_CHECKLIST.md
 docs/ENGINEERING_EXPERIMENTS.md
+
+# Chat attachment files saved on local disk
+uploads/

@@ -136,6 +136,32 @@ class PresenceServiceTests {
         assertThat(server2.connectionCount()).isZero();
     }
 
+    // 새로고침: 새 연결(tab-new)이 먼저 붙고 옛 연결(tab-old)의 종료 알림이 늦게 와도 계속 온라인.
+    // 같은 종료 알림이 두 번 와도 아무 일 없음.
+    @Test
+    void lateDisconnectOfOldConnectionKeepsOnline() {
+        server1.handleSessionConnect(connect(7L, "tab-old"));
+        server2.handleSessionConnect(connect(7L, "tab-new"));
+
+        server1.handleSessionDisconnect(disconnect("tab-old"));
+        server1.handleSessionDisconnect(disconnect("tab-old"));
+        assertThat(server2.isOnline(7L)).isTrue();
+        assertThat(events).extracting(PresenceRealtimeEvent::online).containsExactly(true);
+    }
+
+    // 만료 정리로 이미 오프라인 알림이 나간 연결의 종료 알림이 늦게 와도 오프라인 알림이 또 나가지 않음.
+    @Test
+    void lateDisconnectAfterExpiryDoesNotRepeatOffline() {
+        server1.handleSessionConnect(connect(7L, "tab-a"));
+        clock.advance(Duration.ofSeconds(61));
+        server2.sweepExpiredSessions();
+        assertThat(events).extracting(PresenceRealtimeEvent::online).containsExactly(true, false);
+
+        server1.handleSessionDisconnect(disconnect("tab-a"));
+        assertThat(events).hasSize(2);
+        assertThat(server1.isOnline(7L)).isFalse();
+    }
+
     // 서버 사이 방송 글자를 보내고 받았을 때 내용이 그대로인지.
     @Test
     void broadcastMessageRoundTrip() {
